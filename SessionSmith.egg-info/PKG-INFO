@@ -1,0 +1,58 @@
+Metadata-Version: 2.4
+Name: SessionSmith
+Version: 0.1.0
+Summary: Simple session save/load utility for Jupyter notebooks using dill
+Home-page: https://github.com/yut0takagi/SessionSmith
+Author: YutoTAKAGI
+Author-email: yutotkg.1040@gmail.com
+License: MIT
+Classifier: Programming Language :: Python :: 3
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Requires-Python: >=3.6
+Description-Content-Type: text/markdown
+Requires-Dist: dill
+Dynamic: author
+Dynamic: author-email
+Dynamic: classifier
+Dynamic: description
+Dynamic: description-content-type
+Dynamic: home-page
+Dynamic: license
+Dynamic: requires-dist
+Dynamic: requires-python
+Dynamic: summary
+
+"""
+# SessionSmith
+
+**SessionSmith** は、Jupyter Notebook や Python 実行時のセッション（変数・オブジェクト）を簡単に保存・復元できる軽量ライブラリです。
+
+## 特徴
+
+- `dill` を使ってシームレスにセッション保存
+- たった2行で保存＆復元
+- 簡単＆高速
+
+## インストール
+
+```bash
+pip install SessionSmith
+```
+
+## 使い方
+
+```python
+from session_smith import save_session, load_session
+
+# セッション保存
+save_session("my_session.dill")
+
+# セッション復元
+load_session("my_session.dill")
+```
+
+## ライセンス
+
+MIT
+"""
