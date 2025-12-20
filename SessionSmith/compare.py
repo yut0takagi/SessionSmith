@@ -29,21 +29,23 @@ def compare_sessions(
         FileNotFoundError: いずれかのファイルが存在しない場合
         IOError: ファイルの読み込みに失敗した場合
     """
-    file_path1 = Path(file_path1)
-    file_path2 = Path(file_path2)
-    
-    if not file_path1.exists():
-        raise FileNotFoundError(f"Session file '{file_path1}' not found.")
-    
-    if not file_path2.exists():
-        raise FileNotFoundError(f"Session file '{file_path2}' not found.")
+    def _resolve_and_check(path: Union[str, Path]) -> Path:
+        p = Path(path)
+        if not p.exists():
+            raise FileNotFoundError(f"Session file '{p}' not found.")
+        return p
 
-    # 変数名のリストを取得
-    try:
-        vars1 = set(list_session_variables(file_path1))
-        vars2 = set(list_session_variables(file_path2))
-    except Exception as e:
-        raise IOError(f"Failed to read session variables: {str(e)}") from e
+    file_path1 = _resolve_and_check(file_path1)
+    file_path2 = _resolve_and_check(file_path2)
+
+    def _get_variable_set(path: Path) -> Set[str]:
+        try:
+            return set(list_session_variables(path))
+        except Exception as e:
+            raise IOError(f"Failed to read session variables: {str(e)}") from e
+
+    vars1 = _get_variable_set(file_path1)
+    vars2 = _get_variable_set(file_path2)
 
     # 共通変数、追加、削除を計算
     common = vars1 & vars2
