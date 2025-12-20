@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.3] - 2025-12-21
+
+### Fixed
+- **`save_session`/`load_session` が変数を正しく保存・復元しない問題を修正**
+  - `_get_globals_dict` 関数がユーザーのグローバル変数ではなく、`core.py` の内部変数（`typing` モジュールのインポートなど）を取得していた問題を修正
+  - フレームスタックを正しく2階層遡るように修正（`_get_globals_dict` → `save/load_session` → ユーザーコード）
+  - `SessionManager` クラスの `_get_globals_dict` メソッドも同様に修正
+
 ## [0.1.2] - 2025-12-20
 
 ### Added
