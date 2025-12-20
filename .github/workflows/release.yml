@@ -94,6 +94,11 @@ jobs:
           git push origin ${TAG_NAME}
           echo "Created and pushed tag: ${TAG_NAME}"
 
+      - name: Clean build artifacts
+        if: steps.check_tag.outputs.exists == 'false'
+        run: |
+          rm -rf dist/ build/ *.egg-info/
+
       - name: Build package
         if: steps.check_tag.outputs.exists == 'false'
         run: |
