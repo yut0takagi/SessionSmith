@@ -41,3 +41,8 @@ config.yaml
 # tutorial temporary files
 temp/
 *.pkl
+
+# build artifacts
+build/
+dist/
+*.egg-info/
