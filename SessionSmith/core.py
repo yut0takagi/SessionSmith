@@ -101,13 +101,14 @@ def _validate_on_error_option(on_error: str) -> str:
     return on_error
 
 
-def _get_globals_dict(globals_dict: Optional[Dict[str, Any]], depth: int = 2) -> Dict[str, Any]:
+def _get_globals_dict(globals_dict: Optional[Dict[str, Any]], depth: int = 2, copy: bool = True) -> Dict[str, Any]:
     """
     グローバル変数辞書を取得します
     
     Args:
         globals_dict: グローバル変数辞書（Noneの場合は自動取得）
         depth: 呼び出し元からのフレーム深度（デフォルトは2：_get_globals_dict -> save/load_session -> ユーザーコード）
+        copy: Trueの場合はコピーを返す（save_session用）、Falseの場合は参照を返す（load_session用）
         
     Returns:
         dict: グローバル変数辞書
@@ -129,7 +130,8 @@ def _get_globals_dict(globals_dict: Optional[Dict[str, Any]], depth: int = 2) ->
                 raise RuntimeError("Cannot access calling frame at specified depth")
             caller_frame = caller_frame.f_back
         
-        result = caller_frame.f_globals.copy()
+        # save_sessionはコピー（安全な読み取り）、load_sessionは参照（変更を反映）
+        result = caller_frame.f_globals.copy() if copy else caller_frame.f_globals
         del frame
         return result
     except Exception as e:
@@ -334,7 +336,8 @@ def load_session(
     if not file_path.is_file():
         raise ValueError(f"'{file_path}' is not a file.")
     
-    globals_dict = _get_globals_dict(globals_dict)
+    # load_sessionでは元のグローバル変数を変更する必要があるため、copy=False
+    globals_dict = _get_globals_dict(globals_dict, copy=False)
     
     if include is not None and not isinstance(include, list):
         raise TypeError(f"include must be a list, got {type(include).__name__}")
