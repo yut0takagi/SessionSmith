@@ -1,3 +1,5 @@
+LICENSE
+README.md
 setup.py
 SessionSmith/__init__.py
 SessionSmith/compare.py
