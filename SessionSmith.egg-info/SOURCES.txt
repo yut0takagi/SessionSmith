@@ -1,6 +1,14 @@
+LICENSE
+README.md
 setup.py
+SessionSmith/__init__.py
+SessionSmith/compare.py
+SessionSmith/core.py
+SessionSmith/info.py
+SessionSmith/manager.py
+SessionSmith/serializers.py
+SessionSmith/utils.py
 SessionSmith.egg-info/PKG-INFO
 SessionSmith.egg-info/SOURCES.txt
 SessionSmith.egg-info/dependency_links.txt
-SessionSmith.egg-info/requires.txt
 SessionSmith.egg-info/top_level.txt

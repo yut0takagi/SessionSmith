@@ -1,0 +1,143 @@
+name: Release and Publish to PyPI
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - '**.md'
+      - '.gitignore'
+      - 'tutorial.ipynb'
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.9'
+
+      - name: Get version from package
+        id: get_version
+        run: |
+          python3 << 'EOF'
+          import re
+          import os
+          
+          init_path = 'SessionSmith/__init__.py'
+          with open(init_path, 'r') as f:
+              content = f.read()
+              match = re.search(r'__version__\s*=\s*["\']([^"\']+)["\']', content)
+              if match:
+                  version = match.group(1)
+                  print(f"VERSION={version}")
+                  with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+                      f.write(f"version={version}\n")
+          EOF
+
+      - name: Check if tag exists
+        id: check_tag
+        run: |
+          VERSION="${{ steps.get_version.outputs.version }}"
+          if git rev-parse "v${VERSION}" >/dev/null 2>&1; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "Tag v${VERSION} already exists, skipping release"
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "Tag v${VERSION} does not exist, proceeding with release"
+          fi
+
+      - name: Create release branch
+        if: steps.check_tag.outputs.exists == 'false'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ steps.get_version.outputs.version }}"
+          BRANCH_NAME="release/v${VERSION}"
+          
+          # リモートのリリースブランチをチェック
+          git fetch origin
+          
+          # リリースブランチが存在しない場合のみ作成
+          if ! git show-ref --verify --quiet refs/remotes/origin/${BRANCH_NAME}; then
+            git checkout -b ${BRANCH_NAME}
+            git push origin ${BRANCH_NAME}
+            echo "Created release branch: ${BRANCH_NAME}"
+          else
+            echo "Release branch ${BRANCH_NAME} already exists, checking it out"
+            git checkout -b ${BRANCH_NAME} origin/${BRANCH_NAME} || git checkout ${BRANCH_NAME}
+          fi
+
+      - name: Create and push tag
+        if: steps.check_tag.outputs.exists == 'false'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ steps.get_version.outputs.version }}"
+          TAG_NAME="v${VERSION}"
+          
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          git tag -a ${TAG_NAME} -m "Release ${TAG_NAME}"
+          git push origin ${TAG_NAME}
+          echo "Created and pushed tag: ${TAG_NAME}"
+
+      - name: Build package
+        if: steps.check_tag.outputs.exists == 'false'
+        run: |
+          python3 -m pip install --upgrade pip build twine
+          python3 -m build
+
+      - name: Publish to PyPI
+        if: steps.check_tag.outputs.exists == 'false'
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+        run: |
+          python3 -m twine upload dist/*
+
+      - name: Read CHANGELOG
+        if: steps.check_tag.outputs.exists == 'false'
+        id: changelog
+        run: |
+          VERSION="${{ steps.get_version.outputs.version }}"
+          if [ -f CHANGELOG.md ]; then
+            # CHANGELOGから該当バージョンのセクションを抽出
+            awk "/^## \[${VERSION}\]/,/^## \[/" CHANGELOG.md | sed '$d' > /tmp/release_notes.md || true
+            if [ -s /tmp/release_notes.md ]; then
+              cat /tmp/release_notes.md
+            else
+              echo "## Changes in v${VERSION}" > /tmp/release_notes.md
+              echo "" >> /tmp/release_notes.md
+              echo "See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for details." >> /tmp/release_notes.md
+              cat /tmp/release_notes.md
+            fi
+          else
+            echo "## Changes in v${VERSION}" > /tmp/release_notes.md
+            cat /tmp/release_notes.md
+          fi
+
+      - name: Create GitHub Release
+        if: steps.check_tag.outputs.exists == 'false'
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ steps.get_version.outputs.version }}
+          name: Release v${{ steps.get_version.outputs.version }}
+          body_path: /tmp/release_notes.md
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
