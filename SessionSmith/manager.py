@@ -59,7 +59,7 @@ class SessionManager:
             depth: 呼び出し元からのフレーム深度（デフォルトは2：_get_globals_dict -> __init__ -> ユーザーコード）
             
         Returns:
-            dict: グローバル変数辞書
+            dict: グローバル変数辞書（参照、コピーではない）
         """
         if globals_dict is not None:
             if not isinstance(globals_dict, dict):
@@ -78,7 +78,8 @@ class SessionManager:
                     raise RuntimeError("Cannot access calling frame at specified depth")
                 caller_frame = caller_frame.f_back
             
-            result = caller_frame.f_globals.copy()
+            # SessionManagerは変数を変更する必要があるため、参照を返す（コピーではない）
+            result = caller_frame.f_globals
             del frame
             return result
         except Exception as e:
