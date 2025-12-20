@@ -46,16 +46,23 @@ jobs:
                       f.write(f"version={version}\n")
           EOF
 
+      - name: Fetch all tags
+        run: |
+          git fetch --tags --force
+
       - name: Check if tag exists
         id: check_tag
         run: |
           VERSION="${{ steps.get_version.outputs.version }}"
-          if git rev-parse "v${VERSION}" >/dev/null 2>&1; then
+          TAG_NAME="v${VERSION}"
+          
+          # ローカルとリモートの両方をチェック
+          if git rev-parse "${TAG_NAME}" >/dev/null 2>&1 || git rev-parse "refs/tags/${TAG_NAME}" >/dev/null 2>&1; then
             echo "exists=true" >> $GITHUB_OUTPUT
-            echo "Tag v${VERSION} already exists, skipping release"
+            echo "Tag ${TAG_NAME} already exists, skipping release"
           else
             echo "exists=false" >> $GITHUB_OUTPUT
-            echo "Tag v${VERSION} does not exist, proceeding with release"
+            echo "Tag ${TAG_NAME} does not exist, proceeding with release"
           fi
 
       - name: Create release branch
@@ -93,6 +100,11 @@ jobs:
           git tag -a ${TAG_NAME} -m "Release ${TAG_NAME}"
           git push origin ${TAG_NAME}
           echo "Created and pushed tag: ${TAG_NAME}"
+
+      - name: Clean build artifacts
+        if: steps.check_tag.outputs.exists == 'false'
+        run: |
+          rm -rf dist/ build/ *.egg-info/
 
       - name: Build package
         if: steps.check_tag.outputs.exists == 'false'

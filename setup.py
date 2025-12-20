@@ -37,6 +37,10 @@ setup(
     version=get_version(),
     packages=find_packages(),
     install_requires=[],
+    extras_require={
+        "visualization": ["matplotlib>=3.5.0"],
+        "all": ["matplotlib>=3.5.0"],
+    },
     author="YutoTAKAGI",
     author_email="yutotkg.1040@gmail.com",
     description="Simple session save/load utility for Jupyter notebooks using pickle",
@@ -55,5 +59,5 @@ setup(
         "Framework :: Jupyter",
     ],
     python_requires='>=3.9',
-    keywords="jupyter notebook session save load pickle serialization",
+    keywords="jupyter notebook session save load pickle serialization algorithm tracer visualization",
 )
