@@ -3,14 +3,12 @@ from setuptools import setup, find_packages
 
 setup(
     name="SessionSmith",
-    version="0.1.0",
+    version="0.1.1",
     packages=find_packages(),
-    install_requires=[
-        "dill"
-    ],
+    install_requires=[],
     author="YutoTAKAGI",
     author_email="yutotkg.1040@gmail.com",
-    description="Simple session save/load utility for Jupyter notebooks using dill",
+    description="Simple session save/load utility for Jupyter notebooks using pickle",
     long_description=open('README.md', encoding='utf-8').read(),
     long_description_content_type='text/markdown',
     url="https://github.com/yut0takagi/SessionSmith",
