@@ -19,6 +19,7 @@
 - セッション情報表示・比較機能
 - 自動バックアップ機能
 - カスタムシリアライザー対応
+- **アルゴリズム実行トレーサー**（1行ごとの変数状態記録・可視化）
 
 ## インストール
 
@@ -173,6 +174,54 @@ save_session("session.pkl", on_error="warn")  # 'skip', 'warn', 'raise'
 
 # pickleプロトコルバージョンを指定
 save_session("session.pkl", protocol=4)
+```
+
+### 10. アルゴリズム実行トレーサー（新機能）
+
+アルゴリズムの実行を1行ごとにトレースし、変数の状態を記録・可視化する機能です。ヒープソートやバブルソートなどのアルゴリズムの動作を理解するのに最適です。
+
+```python
+from SessionSmith import AlgorithmTracer, visualize_algorithm_trace, print_trace_summary
+
+def bubble_sort(arr):
+    n = len(arr)
+    for i in range(n):
+        for j in range(0, n - i - 1):
+            if arr[j] > arr[j + 1]:
+                arr[j], arr[j + 1] = arr[j + 1], arr[j]
+
+# トレーサーを使用して実行
+arr = [64, 34, 25, 12, 22, 11, 90]
+with AlgorithmTracer(target_variables=["arr", "i", "j"]) as tracer:
+    bubble_sort(arr)
+
+# トレースデータを保存
+tracer.save("bubble_sort_trace.json", format="json")
+
+# サマリーを表示
+print_trace_summary(trace_data=tracer.get_trace_data())
+
+# 可視化（matplotlibが必要）
+# pip install matplotlib または pip install SessionSmith[visualization]
+visualize_algorithm_trace(
+    trace_data=tracer.get_trace_data(),
+    output_file="bubble_sort_animation.gif",
+    target_variables=["arr"],
+    animation=True
+)
+```
+
+**特徴:**
+- チェックポイント不要：`sys.settrace`で自動的に1行ごとに記録
+- 柔軟な追跡：特定の変数のみ、または全ての変数を追跡可能
+- 可視化対応：配列の変化をアニメーション（GIF/HTML）で表示
+- 複数形式対応：JSON/Pickleで保存
+
+**可視化機能を使うには:**
+```bash
+pip install SessionSmith[visualization]
+# または
+pip install matplotlib
 ```
 
 ## ライセンス
