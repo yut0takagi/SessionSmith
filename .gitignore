@@ -49,3 +49,9 @@ temp/
 build/
 dist/
 SessionSmith.egg-info
+
+# extension build artifacts
+extension/node_modules/
+extension/out/
+extension/*.vsix
+.env
