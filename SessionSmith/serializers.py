@@ -58,7 +58,7 @@ class CustomSerializer:
         # 登録されたシリアライザーをチェック（完全一致）
         if obj_type in self.serializers:
             try:
-            return self.serializers[obj_type](obj)
+                return self.serializers[obj_type](obj)
             except Exception as e:
                 warnings.warn(
                     f"Serializer for {obj_type.__name__} failed: {e}",
@@ -69,9 +69,9 @@ class CustomSerializer:
         # 型の階層をチェック（基底クラス用）
         for registered_type, serializer in self.serializers.items():
             try:
-            if isinstance(obj, registered_type):
+                if isinstance(obj, registered_type):
                     try:
-                return serializer(obj)
+                        return serializer(obj)
                     except Exception as e:
                         warnings.warn(
                             f"Serializer for {registered_type.__name__} failed: {e}",
@@ -123,7 +123,7 @@ class CustomSerializer:
 def create_serializer() -> CustomSerializer:
     """
     カスタムシリアライザーを作成します
-
+    
     Returns:
         CustomSerializer: 新しいカスタムシリアライザーインスタンス
         

@@ -197,25 +197,11 @@ def save_session(
     session: Dict[str, Any] = {}
     errors: List[str] = []
 
-    # typingモジュールの型ヒントを除外（ユーザー定義変数ではない）
-    typing_types = {
-        'Optional', 'List', 'Dict', 'Union', 'Callable', 'Literal',
-        'Tuple', 'Set', 'FrozenSet', 'Any', 'Type', 'TypeVar',
-        'Generic', 'Protocol', 'TypedDict', 'NamedTuple', 'NewType',
-        'Annotated', 'Required', 'NotRequired', 'Final', 'ClassVar',
-        'Self', 'ParamSpec', 'TypeAlias', 'TypeGuard', 'SupportsAbs',
-        'SupportsRound', 'SupportsInt', 'SupportsFloat', 'SupportsComplex',
-        'SupportsBytes', 'SupportsIndex', 'SupportsTrunc'
-    }
-
     for k, v in globals_dict.items():
         # 特別な変数をスキップ
         if k.startswith("__") and k.endswith("__"):
             continue
         if k in exclude:
-            continue
-        # typingモジュールの型ヒントを除外
-        if k in typing_types:
             continue
         if isinstance(v, skip_types):
             continue
