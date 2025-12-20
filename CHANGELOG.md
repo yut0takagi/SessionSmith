@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.4] - 2025-12-21
+
+### Fixed
+- **`load_session` で変数がグローバル名前空間に反映されない問題を修正**
+  - グローバル変数辞書のコピーではなく参照を使用するように変更
+  - `save_session` は安全な読み取りのためコピーを使用、`load_session` は変更を反映するため参照を使用
+
 ## [0.1.3] - 2025-12-21
 
 ### Fixed
