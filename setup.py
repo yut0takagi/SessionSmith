@@ -54,6 +54,6 @@ setup(
         "Topic :: Scientific/Engineering",
         "Framework :: Jupyter",
     ],
-    python_requires='>=3.6',
+    python_requires='>=3.9',
     keywords="jupyter notebook session save load pickle serialization",
 )
