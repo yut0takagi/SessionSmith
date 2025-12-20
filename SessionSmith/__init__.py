@@ -14,7 +14,7 @@ from .serializers import CustomSerializer
 from .tracer import AlgorithmTracer
 from .visualizer import visualize_algorithm_trace, print_trace_summary
 
-__version__ = "0.1.2"
+__version__ = "0.1.3"
 
 __all__ = [
     "save_session",

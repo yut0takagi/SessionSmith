@@ -101,12 +101,13 @@ def _validate_on_error_option(on_error: str) -> str:
     return on_error
 
 
-def _get_globals_dict(globals_dict: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+def _get_globals_dict(globals_dict: Optional[Dict[str, Any]], depth: int = 2) -> Dict[str, Any]:
     """
     グローバル変数辞書を取得します
     
     Args:
         globals_dict: グローバル変数辞書（Noneの場合は自動取得）
+        depth: 呼び出し元からのフレーム深度（デフォルトは2：_get_globals_dict -> save/load_session -> ユーザーコード）
         
     Returns:
         dict: グローバル変数辞書
@@ -118,9 +119,16 @@ def _get_globals_dict(globals_dict: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     
     try:
         frame = inspect.currentframe()
-        if frame is None or frame.f_back is None:
+        if frame is None:
             raise RuntimeError("Cannot access calling frame")
-        caller_frame = frame.f_back
+        
+        # 指定された深度までフレームを遡る
+        caller_frame = frame
+        for _ in range(depth):
+            if caller_frame.f_back is None:
+                raise RuntimeError("Cannot access calling frame at specified depth")
+            caller_frame = caller_frame.f_back
+        
         result = caller_frame.f_globals.copy()
         del frame
         return result
