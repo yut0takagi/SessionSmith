@@ -22,6 +22,7 @@
 - 🏷️ **バージョン管理**: Git風のコミット・チェックアウト機能
 - 📈 **アルゴリズムトレーサー**: 1行ごとの変数状態記録・可視化
 - 🎨 **可視化**: アルゴリズムの実行をアニメーションで表示
+- 🚀 **拡張機能対応**: Cursor/VSCode拡張機能でコードを書かずに実行可能
 
 ## インストール
 
@@ -181,6 +182,55 @@ visualize_algorithm_trace(
     target_variables=["arr"]
 )
 ```
+
+## Cursor/VSCode拡張機能
+
+SessionSmithには、Cursor/VSCode用の拡張機能が用意されています。コードを書かずに、GUIからセッションの保存・復元が可能です。
+
+### インストール
+
+**Open VSX Registryから:**
+1. Cursor/VSCodeでコマンドパレット（Cmd+Shift+P / Ctrl+Shift+P）を開く
+2. `Extensions: Install Extension` を選択
+3. `SessionSmith` を検索してインストール
+
+または、以下のURLから直接インストール:
+- https://open-vsx.org/extension/yut0takagi/sessionsmith
+
+### 使い方
+
+#### Notebookでの使用
+
+1. Jupyter Notebookを開く
+2. 変数を定義:
+   ```python
+   x = 42
+   y = "Hello"
+   z = [1, 2, 3]
+   ```
+3. コマンドパレットから `SessionSmith: Save Session` を選択
+4. ファイル名を入力して保存
+
+#### セッションの読み込み
+
+1. コマンドパレットから `SessionSmith: Load Session` を選択
+2. セッションファイル（.pkl, .json, .msgpack, .h5）を選択
+3. 変数が自動的に復元されます
+
+#### セッション情報の表示
+
+- エクスプローラーでセッションファイルを右クリック
+- 「Show Session Info」を選択
+
+### 機能
+
+- ✅ **Save Session**: 現在のPythonセッション（変数）を保存
+- ✅ **Load Session**: セッションファイルを選択して変数を復元
+- ✅ **Show Session Info**: セッションファイルの情報を表示
+- ✅ **Notebook対応**: Jupyter Notebookでセルを追加せずに実行
+- ✅ **自動検出**: Pythonインタープリターを自動検出（仮想環境対応）
+
+詳細は [extension/README.md](extension/README.md) を参照してください。
 
 ## ライセンス
 

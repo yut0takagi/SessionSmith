@@ -1,0 +1,82 @@
+{
+  "name": "sessionsmith",
+  "displayName": "SessionSmith",
+  "description": "Session save/load utility for Python sessions in Cursor/VSCode. Save and restore your Python variables seamlessly in Jupyter Notebooks and Python files.",
+  "version": "0.1.0",
+  "publisher": "yut0takagi",
+  "author": {
+    "name": "yut0takagi"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yut0takagi/SessionSmith.git"
+  },
+  "homepage": "https://github.com/yut0takagi/SessionSmith",
+  "bugs": {
+    "url": "https://github.com/yut0takagi/SessionSmith/issues"
+  },
+  "keywords": [
+    "python",
+    "session",
+    "save",
+    "load",
+    "jupyter",
+    "notebook",
+    "variables",
+    "pickle",
+    "serialization"
+  ],
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Other",
+    "Data Science",
+    "Machine Learning"
+  ],
+  "activationEvents": [
+    "onLanguage:python"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "sessionsmith.saveSession",
+        "title": "Save Session",
+        "category": "SessionSmith"
+      },
+      {
+        "command": "sessionsmith.loadSession",
+        "title": "Load Session",
+        "category": "SessionSmith"
+      },
+      {
+        "command": "sessionsmith.showSessionInfo",
+        "title": "Show Session Info",
+        "category": "SessionSmith"
+      }
+    ],
+    "menus": {
+      "explorer/context": [
+        {
+          "command": "sessionsmith.showSessionInfo",
+          "when": "resourceExtname == '.pkl' || resourceExtname == '.json' || resourceExtname == '.msgpack' || resourceExtname == '.h5'",
+          "group": "sessionsmith"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.80.0",
+    "@types/node": "^18.0.0",
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {}
+}
+
