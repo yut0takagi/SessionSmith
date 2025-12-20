@@ -50,6 +50,8 @@ load_session("session.pkl")
 load_session("session.pkl", include=["data", "model"])
 ```
 
+**注意**: Jupyter Notebook環境では、`_ih`, `_oh`, `In`, `Out`などの内部変数は自動的に除外されます（`exclude_jupyter=True`がデフォルト）。これらを含めたい場合は`exclude_jupyter=False`を指定してください。
+
 ### 2. 圧縮サポート
 
 ```python

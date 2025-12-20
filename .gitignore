@@ -1,0 +1,43 @@
+# Python artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# VSCode
+.vscode/
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# macOS
+.DS_Store
+
+# virtual environments
+venv/
+.env/
+env/
+.venv/
+
+# logs
+*.log
+
+# system files
+Thumbs.db
+
+# test cache
+.pytest_cache/
+
+# mypy
+.mypy_cache/
+
+# coverage
+htmlcov/
+.coverage
+
+# production configs (example)
+config.yaml
+
+# tutorial temporary files
+temp/
+*.pkl

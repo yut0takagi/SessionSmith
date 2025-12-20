@@ -6,7 +6,7 @@ import inspect
 import threading
 import time
 from typing import Optional, Dict, Any, List, Callable
-from .core import save_session, load_session, _is_jupyter_environment, _is_jupyter_internal_var
+from .core import save_session, load_session
 
 
 class SessionManager:
@@ -40,7 +40,6 @@ class SessionManager:
         verbose: bool = False,
         on_error: str = "skip",
         serializer: Optional[Callable] = None,
-        exclude_jupyter: bool = True,
     ) -> None:
         """
         セッションを保存します
@@ -54,7 +53,6 @@ class SessionManager:
             verbose (bool): 詳細なログを出力するか
             on_error (str): エラー時の動作
             serializer (callable, optional): カスタムシリアライザー
-            exclude_jupyter (bool): Jupyter Notebookの内部変数を自動的に除外するか（デフォルト: True）
         """
         save_session(
             file_path=file_path,
@@ -66,7 +64,6 @@ class SessionManager:
             verbose=verbose,
             on_error=on_error,
             serializer=serializer,
-            exclude_jupyter=exclude_jupyter,
         )
 
     def load(
@@ -144,7 +141,6 @@ class SessionManager:
                     compress=compress,
                     metadata=metadata,
                     verbose=False,
-                    exclude_jupyter=True,  # 自動バックアップではJupyter内部変数を除外
                 )
             except Exception as e:
                 print(f"Auto-save failed: {e}")
@@ -164,53 +160,4 @@ class SessionManager:
     def is_auto_save_running(self) -> bool:
         """自動バックアップが実行中かどうかを返します"""
         return self._auto_save_running
-
-    def list_variables(self, exclude_jupyter: bool = True, exclude_builtins: bool = True) -> List[str]:
-        """
-        管理している変数のリストを取得します
-
-        Args:
-            exclude_jupyter (bool): Jupyter内部変数を除外するか（デフォルト: True）
-            exclude_builtins (bool): 組み込み関数・変数を除外するか（デフォルト: True）
-
-        Returns:
-            list: 変数名のリスト
-        """
-        variables = []
-        for var_name in self.globals_dict.keys():
-            # 特別な変数（__xxx__）を除外
-            if var_name.startswith("__") and var_name.endswith("__"):
-                continue
-
-            # Jupyter内部変数を除外
-            if exclude_jupyter and _is_jupyter_environment():
-                if _is_jupyter_internal_var(var_name):
-                    continue
-
-            # 組み込み関数・変数を除外
-            if exclude_builtins:
-                if var_name in ['exit', 'quit', 'open', 'print', 'len', 'str', 'int', 'float', 'list', 'dict', 'tuple', 'set']:
-                    continue
-
-            variables.append(var_name)
-
-        return sorted(variables)
-
-    def get_variable_info(self) -> Dict[str, Any]:
-        """
-        管理している変数の情報を取得します
-
-        Returns:
-            dict: 変数情報（変数名、型、数など）
-        """
-        variables = self.list_variables()
-        var_info = {}
-        for var_name in variables:
-            var_value = self.globals_dict.get(var_name)
-            if var_value is not None:
-                var_info[var_name] = {
-                    "type": type(var_value).__name__,
-                    "value": str(var_value)[:50] + "..." if len(str(var_value)) > 50 else str(var_value),
-                }
-        return var_info
 
