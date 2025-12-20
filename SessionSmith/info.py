@@ -11,7 +11,7 @@ from datetime import datetime
 from pathlib import Path
 
 
-def _load_session_file(file_path: Union[str, Path]) -> tuple[Dict[str, Any], Optional[str]]:
+def _load_session_file(file_path: Union[str, Path], format: Optional[str] = None) -> tuple[Dict[str, Any], Optional[str]]:
     """
     セッションファイルを読み込みます（圧縮形式を自動検出）
     
@@ -34,30 +34,24 @@ def _load_session_file(file_path: Union[str, Path]) -> tuple[Dict[str, Any], Opt
         raise ValueError(f"'{file_path}' is not a file.")
     
     compression: Optional[str] = None
+    from .formats import detect_format, load_pickle, load_json, load_msgpack, load_hdf5
+    
     session: Dict[str, Any] = {}
+    compression: Optional[str] = None
     
     try:
-        # gzipで試す
-        try:
-            with gzip.open(str(file_path), 'rb') as f:
-                session = pickle.load(f)
-            compression = "gzip"
-        except (OSError, gzip.BadGzipFile, EOFError):
-            # bz2で試す
-            try:
-                with bz2.open(str(file_path), 'rb') as f:
-                    session = pickle.load(f)
-                compression = "bz2"
-            except (OSError, EOFError):
-                # 通常のpickleファイルとして読み込む
-                try:
-                    with open(str(file_path), 'rb') as f:
-                        session = pickle.load(f)
-                    compression = None
-                except EOFError:
-                    raise IOError(f"File '{file_path}' appears to be corrupted or empty")
-    except pickle.UnpicklingError as e:
-        raise IOError(f"Failed to unpickle session from {file_path}: {str(e)}") from e
+        detected_format = detect_format(file_path, format)
+        
+        if detected_format == "pickle":
+            session = load_pickle(file_path)
+        elif detected_format == "json":
+            session = load_json(file_path)
+        elif detected_format == "msgpack":
+            session = load_msgpack(file_path)
+        elif detected_format == "hdf5":
+            session = load_hdf5(file_path)
+        else:
+            raise ValueError(f"Unsupported format: {detected_format}")
     except Exception as e:
         raise IOError(f"Failed to load session from {file_path}: {str(e)}") from e
     

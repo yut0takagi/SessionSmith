@@ -31,22 +31,24 @@ def verify_session(file_path: Union[str, Path]) -> Tuple[bool, Optional[str]]:
         return False, f"'{file_path}' is not a file."
 
     try:
-        # 圧縮形式を自動検出して読み込む
-        session: Dict[str, Any] = {}
+        from .formats import detect_format, load_pickle, load_json, load_msgpack, load_hdf5
+        
+        # 形式を自動検出して読み込む
+        detected_format = detect_format(file_path)
         
         try:
-            with gzip.open(str(file_path), 'rb') as f:
-                session = pickle.load(f)
-        except (OSError, gzip.BadGzipFile, EOFError):
-            try:
-                with bz2.open(str(file_path), 'rb') as f:
-                    session = pickle.load(f)
-            except (OSError, EOFError):
-                try:
-                    with open(str(file_path), 'rb') as f:
-                        session = pickle.load(f)
-                except EOFError:
-                    return False, "File appears to be corrupted or empty"
+            if detected_format == "pickle":
+                session = load_pickle(file_path)
+            elif detected_format == "json":
+                session = load_json(file_path)
+            elif detected_format == "msgpack":
+                session = load_msgpack(file_path)
+            elif detected_format == "hdf5":
+                session = load_hdf5(file_path)
+            else:
+                return False, f"Unsupported format: {detected_format}"
+        except Exception as e:
+            return False, f"Failed to load file: {str(e)}"
 
         # 基本的な構造チェック
         if not isinstance(session, dict):
@@ -60,8 +62,6 @@ def verify_session(file_path: Union[str, Path]) -> Tuple[bool, Optional[str]]:
 
         return True, None
 
-    except pickle.UnpicklingError as e:
-        return False, f"Pickle error: {str(e)}"
     except Exception as e:
         return False, f"Error: {str(e)}"
 

@@ -12,14 +12,16 @@
 
 ## 特徴
 
-- `pickle` を使ってシームレスにセッション保存
-- たった2行で保存＆復元
-- 簡単＆高速
-- 圧縮サポート（gzip/bz2）
-- セッション情報表示・比較機能
-- 自動バックアップ機能
-- カスタムシリアライザー対応
-- **アルゴリズム実行トレーサー**（1行ごとの変数状態記録・可視化）
+- 🚀 **簡単**: たった2行で保存＆復元
+- 📦 **複数形式対応**: pickle（デフォルト）、JSON、MessagePack、HDF5
+- 🔍 **自動検出**: ファイル拡張子から形式を自動検出
+- 🗜️ **圧縮対応**: gzip/bz2圧縮でディスク容量を節約
+- 📊 **情報表示**: セッションの詳細情報を確認
+- 🔄 **比較機能**: 2つのセッションを比較
+- 💾 **自動バックアップ**: 定期的な自動保存
+- 🏷️ **バージョン管理**: Git風のコミット・チェックアウト機能
+- 📈 **アルゴリズムトレーサー**: 1行ごとの変数状態記録・可視化
+- 🎨 **可視化**: アルゴリズムの実行をアニメーションで表示
 
 ## インストール
 
@@ -27,84 +29,38 @@
 pip install SessionSmith
 ```
 
-## 基本的な使い方
+可視化機能を使う場合:
+
+```bash
+pip install SessionSmith[visualization]
+# または
+pip install matplotlib
+```
+
+## クイックスタート
+
+### 基本的な使い方
 
 ```python
 from SessionSmith import save_session, load_session
 
-# セッション保存
+# セッション保存（pickle形式、デフォルト）
 save_session("my_session.pkl")
 
 # セッション復元
 load_session("my_session.pkl")
+
+# JSON形式で保存（安全、可読性）
+save_session("my_session.json")
+
+# MessagePack形式で保存（安全、高速）
+save_session("my_session.msgpack", format="msgpack")
+
+# HDF5形式で保存（科学計算データに最適）
+save_session("my_session.h5", format="hdf5")
 ```
 
-## 主な機能
-
-### 1. 基本的な保存・復元
-
-```python
-from SessionSmith import save_session, load_session
-
-# 保存
-save_session("session.pkl")
-
-# 特定の変数を除外して保存
-save_session("session.pkl", exclude=["temp", "cache"])
-
-# 復元
-load_session("session.pkl")
-
-# 特定の変数のみ復元
-load_session("session.pkl", include=["data", "model"])
-```
-
-**注意**: Jupyter Notebook環境では、`_ih`, `_oh`, `In`, `Out`などの内部変数は自動的に除外されます（`exclude_jupyter=True`がデフォルト）。これらを含めたい場合は`exclude_jupyter=False`を指定してください。
-
-### 2. 圧縮サポート
-
-```python
-# gzip圧縮で保存
-save_session("session.pkl", compress=True)
-
-# bzip2圧縮で保存
-save_session("session.pkl", compress="bz2")
-```
-
-### 3. セッション情報表示
-
-```python
-from SessionSmith import get_session_info, print_session_info, list_session_variables
-
-# 詳細情報を取得
-info = get_session_info("session.pkl")
-print(info)
-
-# 整形して表示
-print_session_info("session.pkl")
-
-# 変数名のリストを取得
-variables = list_session_variables("session.pkl")
-print(variables)
-```
-
-### 4. セッション比較
-
-```python
-from SessionSmith import compare_sessions, print_comparison
-
-# 2つのセッションを比較
-result = compare_sessions("session1.pkl", "session2.pkl")
-print(result)
-
-# 詳細な比較（値の変更も検出）
-result = compare_sessions("session1.pkl", "session2.pkl", detailed=True)
-
-# 整形して表示
-print_comparison("session1.pkl", "session2.pkl", detailed=True)
-```
-
-### 5. SessionManagerクラス
+### SessionManagerを使う
 
 ```python
 from SessionSmith import SessionManager
@@ -117,111 +73,113 @@ manager.save("session.pkl")
 
 # ロード
 manager.load("session.pkl")
+```
 
-# 自動バックアップ（5分ごと）
+### バージョン管理（新機能）
+
+```python
+from SessionSmith import SessionManager
+
+# バージョン管理を有効化
+manager = SessionManager(enable_version_control=True)
+
+# 保存（自動的にコミット）
+manager.save("session.pkl", commit_message="Initial state")
+
+# コミット履歴を確認
+manager.log()
+
+# 以前の状態に戻す
+manager.checkout(message="Initial state")
+```
+
+## 主な機能
+
+### 1. 基本的な保存・復元
+- 変数の選択的保存・復元
+- 圧縮サポート（gzip/bz2）
+- Jupyter Notebook内部変数の自動除外
+
+### 2. SessionManagerクラス
+- セッション管理の簡素化
+- 自動バックアップ機能
+- バージョン管理機能（Git風）
+
+### 3. セッション情報・比較
+- セッション情報の表示
+- 2つのセッションの比較
+- セッションファイルの検証
+
+### 4. アルゴリズム実行トレーサー
+- 1行ごとの変数状態記録
+- 可視化（アニメーション）
+- トレースデータの保存・読み込み
+
+### 5. カスタムシリアライザー
+- 特定の型に対するカスタムシリアライゼーション
+- 拡張可能な設計
+
+## 詳細なドキュメント
+
+詳細な使い方は以下のドキュメントを参照してください：
+
+- 📖 [基本的な使い方](docs/getting-started.md) - 保存・復元の詳細
+- 🔄 [バージョン管理](docs/version-control.md) - Git風のバージョン管理機能
+- 📈 [アルゴリズムトレーサー](docs/algorithm-tracer.md) - トレース・可視化機能
+- 📚 [APIリファレンス](docs/api-reference.md) - 全APIの詳細
+
+## 使用例
+
+### 複数形式のサポート
+
+```python
+# pickle形式（デフォルト、互換性重視）
+save_session("session.pkl")
+
+# JSON形式（安全、可読性）
+save_session("session.json")
+
+# MessagePack形式（安全、高速）
+save_session("session.msgpack", format="msgpack")
+
+# HDF5形式（科学計算データに最適）
+save_session("session.h5", format="hdf5")
+```
+
+### 圧縮保存
+
+```python
+# gzip圧縮で保存
+save_session("session.pkl", compress=True)
+```
+
+### セレクティブロード
+
+```python
+# 特定の変数のみ復元
+load_session("session.pkl", include=["data", "model"])
+```
+
+### 自動バックアップ
+
+```python
+manager = SessionManager()
 manager.auto_save(interval=300, file_path="autosave.pkl")
-
-# 自動バックアップを停止
-manager.stop_auto_save()
 ```
 
-### 6. セッション検証
+### アルゴリズム可視化
 
 ```python
-from SessionSmith import verify_session
+from SessionSmith import AlgorithmTracer, visualize_algorithm_trace
 
-# セッションファイルの整合性を検証
-is_valid, error = verify_session("session.pkl")
-if is_valid:
-    print("Session file is valid")
-else:
-    print(f"Error: {error}")
-```
-
-### 7. メタデータ保存
-
-```python
-# メタデータ（保存日時、バージョンなど）を含めて保存
-save_session("session.pkl", metadata=True)
-```
-
-### 8. カスタムシリアライザー
-
-```python
-from SessionSmith import CustomSerializer
-
-# シリアライザーを作成
-serializer = CustomSerializer()
-
-# 特定の型に対するシリアライザーを登録
-def my_serializer(obj):
-    return obj.to_dict()
-
-serializer.register(MyClass, my_serializer)
-
-# カスタムシリアライザーを使って保存
-save_session("session.pkl", serializer=serializer)
-```
-
-### 9. 詳細オプション
-
-```python
-# 詳細ログを出力
-save_session("session.pkl", verbose=True)
-
-# エラー時の動作を指定
-save_session("session.pkl", on_error="warn")  # 'skip', 'warn', 'raise'
-
-# pickleプロトコルバージョンを指定
-save_session("session.pkl", protocol=4)
-```
-
-### 10. アルゴリズム実行トレーサー（新機能）
-
-アルゴリズムの実行を1行ごとにトレースし、変数の状態を記録・可視化する機能です。ヒープソートやバブルソートなどのアルゴリズムの動作を理解するのに最適です。
-
-```python
-from SessionSmith import AlgorithmTracer, visualize_algorithm_trace, print_trace_summary
-
-def bubble_sort(arr):
-    n = len(arr)
-    for i in range(n):
-        for j in range(0, n - i - 1):
-            if arr[j] > arr[j + 1]:
-                arr[j], arr[j + 1] = arr[j + 1], arr[j]
-
-# トレーサーを使用して実行
-arr = [64, 34, 25, 12, 22, 11, 90]
-with AlgorithmTracer(target_variables=["arr", "i", "j"]) as tracer:
+with AlgorithmTracer(target_variables=["arr"]) as tracer:
     bubble_sort(arr)
 
-# トレースデータを保存
-tracer.save("bubble_sort_trace.json", format="json")
-
-# サマリーを表示
-print_trace_summary(trace_data=tracer.get_trace_data())
-
-# 可視化（matplotlibが必要）
-# pip install matplotlib または pip install SessionSmith[visualization]
 visualize_algorithm_trace(
     trace_data=tracer.get_trace_data(),
-    output_file="bubble_sort_animation.gif",
-    target_variables=["arr"],
-    animation=True
+    output_file="animation.gif",
+    target_variables=["arr"]
 )
-```
-
-**特徴:**
-- チェックポイント不要：`sys.settrace`で自動的に1行ごとに記録
-- 柔軟な追跡：特定の変数のみ、または全ての変数を追跡可能
-- 可視化対応：配列の変化をアニメーション（GIF/HTML）で表示
-- 複数形式対応：JSON/Pickleで保存
-
-**可視化機能を使うには:**
-```bash
-pip install SessionSmith[visualization]
-# または
-pip install matplotlib
 ```
 
 ## ライセンス

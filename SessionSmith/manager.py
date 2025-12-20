@@ -97,6 +97,7 @@ class SessionManager:
         exclude_jupyter: bool = True,
         auto_commit: Optional[bool] = None,
         commit_message: Optional[str] = None,
+        format: Optional[str] = None,
     ) -> None:
         """
         セッションを保存します
@@ -133,6 +134,7 @@ class SessionManager:
             on_error=on_error,
             serializer=serializer,
             exclude_jupyter=exclude_jupyter,
+            format=format,
         )
         
         self._current_session_file = file_path
@@ -154,6 +156,7 @@ class SessionManager:
         include: Optional[List[str]] = None,
         exclude: Optional[List[str]] = None,
         verbose: bool = False,
+        format: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         セッションをロードします
@@ -173,6 +176,7 @@ class SessionManager:
             include=include,
             exclude=exclude,
             verbose=verbose,
+            format=format,
         )
         
         # 現在のセッションファイルを更新

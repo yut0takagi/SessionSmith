@@ -7,7 +7,7 @@ import types
 import inspect
 import gzip
 import bz2
-from typing import Optional, List, Dict, Any, Union, Callable
+from typing import Optional, List, Dict, Any, Union, Callable, Literal
 import warnings
 import os
 from pathlib import Path
@@ -15,6 +15,17 @@ from .jupyter_utils import (
     is_jupyter_environment,
     get_jupyter_exclude_list,
     is_jupyter_internal_var
+)
+from .formats import (
+    detect_format,
+    save_pickle,
+    load_pickle,
+    save_json,
+    load_json,
+    save_msgpack,
+    load_msgpack,
+    save_hdf5,
+    load_hdf5,
 )
 
 
@@ -128,32 +139,38 @@ def save_session(
     on_error: str = "skip",
     serializer: Optional[Callable[[Any], Any]] = None,
     exclude_jupyter: bool = True,
+    format: Optional[Literal["pickle", "json", "msgpack", "hdf5"]] = None,
 ) -> None:
     """
-    現在のセッションの変数を全てpickleで保存します
+    現在のセッションの変数を保存します
 
     Args:
         file_path: 保存するファイルパス
         globals_dict: 保存対象のグローバル変数辞書（通常はglobals()を渡す）
         exclude: 除外したい変数名のリスト
         compress: 圧縮形式。Trueの場合はgzip、'gzip'または'bz2'を指定可能
-        protocol: pickleプロトコルバージョン（デフォルトは最新）
+        protocol: pickleプロトコルバージョン（pickle形式のみ、デフォルトは最新）
         metadata: メタデータ（保存日時、バージョンなど）を保存するか
         verbose: 詳細なログを出力するか
         on_error: エラー時の動作。'skip'（スキップ）、'warn'（警告）、'raise'（例外）
         serializer: カスタムシリアライザー関数
         exclude_jupyter: Jupyter Notebookの内部変数を自動的に除外するか（デフォルト: True）
+        format: 保存形式（'pickle', 'json', 'msgpack', 'hdf5'）。Noneの場合はファイル拡張子から自動検出
 
     Raises:
         TypeError: 引数の型が不正な場合
         ValueError: 引数の値が不正な場合
         IOError: ファイルの保存に失敗した場合
+        ImportError: 必要なライブラリがインストールされていない場合
     """
     # バリデーション
     file_path = _validate_file_path(file_path)
     compress_type = _validate_compress_option(compress)
     on_error = _validate_on_error_option(on_error)
     globals_dict = _get_globals_dict(globals_dict)
+    
+    # 形式の検出
+    detected_format = detect_format(file_path, format)
     
     if exclude is None:
         exclude = []
@@ -203,19 +220,26 @@ def save_session(
                         raise
                     continue
 
-            # Pickleで保存できるかどうか一度試す
-            try:
-                pickle.dumps(v, protocol=protocol)
+            # 形式に応じて検証
+            if detected_format == "pickle":
+                # Pickleで保存できるかどうか一度試す
+                try:
+                    pickle.dumps(v, protocol=protocol)
+                    session[k] = v
+                    if verbose:
+                        print(f"Saved variable: {k} ({type(v).__name__})")
+                except (pickle.PicklingError, TypeError) as e:
+                    error_msg = f"Failed to pickle variable '{k}': {str(e)}"
+                    errors.append(error_msg)
+                    if on_error == "warn":
+                        warnings.warn(error_msg, UserWarning)
+                    elif on_error == "raise":
+                        raise pickle.PicklingError(error_msg) from e
+            else:
+                # JSON/MessagePack/HDF5形式の場合はそのまま追加（変換は保存時に実行）
                 session[k] = v
                 if verbose:
                     print(f"Saved variable: {k} ({type(v).__name__})")
-            except (pickle.PicklingError, TypeError) as e:
-                error_msg = f"Failed to pickle variable '{k}': {str(e)}"
-                errors.append(error_msg)
-                if on_error == "warn":
-                    warnings.warn(error_msg, UserWarning)
-                elif on_error == "raise":
-                    raise pickle.PicklingError(error_msg) from e
 
         except Exception as e:
             error_msg = f"Unexpected error saving variable '{k}': {str(e)}"
@@ -240,19 +264,21 @@ def save_session(
         # ディレクトリが存在しない場合は作成
         file_path.parent.mkdir(parents=True, exist_ok=True)
         
-        if compress_type == "gzip":
-            with gzip.open(str(file_path), 'wb') as f:
-                pickle.dump(session, f, protocol=protocol)
-        elif compress_type == "bz2":
-            with bz2.open(str(file_path), 'wb') as f:
-                pickle.dump(session, f, protocol=protocol)
+        # 形式に応じて保存
+        if detected_format == "pickle":
+            save_pickle(session, file_path, compress_type, protocol)
+        elif detected_format == "json":
+            save_json(session, file_path, compress_type)
+        elif detected_format == "msgpack":
+            save_msgpack(session, file_path, compress_type)
+        elif detected_format == "hdf5":
+            save_hdf5(session, file_path, compress_type)
         else:
-            with open(str(file_path), 'wb') as f:
-                pickle.dump(session, f, protocol=protocol)
+            raise ValueError(f"Unsupported format: {detected_format}")
 
         if verbose:
             file_size = os.path.getsize(str(file_path))
-            print(f"Session saved to {file_path} ({file_size:,} bytes)")
+            print(f"Session saved to {file_path} ({file_size:,} bytes, format: {detected_format})")
 
     except (IOError, OSError) as e:
         raise IOError(f"Failed to save session to {file_path}: {str(e)}") from e
@@ -269,16 +295,18 @@ def load_session(
     include: Optional[List[str]] = None,
     exclude: Optional[List[str]] = None,
     verbose: bool = False,
+    format: Optional[Literal["pickle", "json", "msgpack", "hdf5"]] = None,
 ) -> Dict[str, Any]:
     """
-    pickleで保存したセッション変数を現在の名前空間に復元します
+    セッション変数を現在の名前空間に復元します
 
     Args:
-        file_path: pickleファイルパス
+        file_path: セッションファイルパス
         globals_dict: 復元するグローバル変数辞書（通常はglobals()を渡す）
         include: ロードする変数名のリスト（指定した変数のみロード）
         exclude: ロードから除外する変数名のリスト
         verbose: 詳細なログを出力するか
+        format: 読み込み形式（'pickle', 'json', 'msgpack', 'hdf5'）。Noneの場合はファイル拡張子から自動検出
 
     Returns:
         dict: ロードされた変数の辞書
@@ -287,6 +315,7 @@ def load_session(
         FileNotFoundError: ファイルが存在しない場合
         IOError: ファイルの読み込みに失敗した場合
         TypeError: 引数の型が不正な場合
+        ImportError: 必要なライブラリがインストールされていない場合
     """
     # バリデーション
     file_path = _validate_file_path(file_path)
@@ -305,32 +334,24 @@ def load_session(
     if exclude is not None and not isinstance(exclude, list):
         raise TypeError(f"exclude must be a list, got {type(exclude).__name__}")
 
-    # ファイルを読み込む（圧縮形式を自動検出）
+    # 形式の検出
+    detected_format = detect_format(file_path, format)
+    
+    # ファイルを読み込む（形式に応じて）
     session: Dict[str, Any] = {}
     compression_detected: Optional[str] = None
     
     try:
-        # gzipで試す
-        try:
-            with gzip.open(str(file_path), 'rb') as f:
-                session = pickle.load(f)
-            compression_detected = "gzip"
-        except (OSError, gzip.BadGzipFile, EOFError):
-            # bz2で試す
-            try:
-                with bz2.open(str(file_path), 'rb') as f:
-                    session = pickle.load(f)
-                compression_detected = "bz2"
-            except (OSError, EOFError):
-                # 通常のpickleファイルとして読み込む
-                try:
-                    with open(str(file_path), 'rb') as f:
-                        session = pickle.load(f)
-                    compression_detected = None
-                except EOFError:
-                    raise IOError(f"File '{file_path}' appears to be corrupted or empty")
-    except pickle.UnpicklingError as e:
-        raise IOError(f"Failed to unpickle session from {file_path}: {str(e)}") from e
+        if detected_format == "pickle":
+            session = load_pickle(file_path)
+        elif detected_format == "json":
+            session = load_json(file_path)
+        elif detected_format == "msgpack":
+            session = load_msgpack(file_path)
+        elif detected_format == "hdf5":
+            session = load_hdf5(file_path)
+        else:
+            raise ValueError(f"Unsupported format: {detected_format}")
     except Exception as e:
         raise IOError(f"Failed to load session from {file_path}: {str(e)}") from e
 
@@ -342,8 +363,7 @@ def load_session(
     metadata = session.pop("__metadata__", None)
     if metadata and verbose:
         print(f"Session metadata: {metadata}")
-        if compression_detected:
-            print(f"Compression: {compression_detected}")
+        print(f"Format: {detected_format}")
 
     # フィルタリング
     if include:
