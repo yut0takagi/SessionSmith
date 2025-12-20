@@ -42,7 +42,10 @@ config.yaml
 temp/
 *.pkl
 
+# SessionSmith version control
+.sessionvc/
+
 # build artifacts
 build/
 dist/
-*.egg-info/
+SessionSmith.egg-info
