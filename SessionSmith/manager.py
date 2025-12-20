@@ -388,24 +388,24 @@ class SessionManager:
             raise ValueError("interval must be at least 10 seconds")
         
         with self._auto_save_lock:
-            if self._auto_save_running:
-                self.stop_auto_save()
+        if self._auto_save_running:
+            self.stop_auto_save()
 
-            self._auto_save_interval = interval
-            if file_path:
+        self._auto_save_interval = interval
+        if file_path:
                 self._auto_save_path = str(file_path)
             
             self._auto_save_exclude = exclude
             self._auto_save_compress = compress
             self._auto_save_metadata = metadata
 
-            self._auto_save_running = True
-            self._auto_save_thread = threading.Thread(
-                target=self._auto_save_loop,
+        self._auto_save_running = True
+        self._auto_save_thread = threading.Thread(
+            target=self._auto_save_loop,
                 daemon=True,
                 name="SessionManager-auto-save"
-            )
-            self._auto_save_thread.start()
+        )
+        self._auto_save_thread.start()
 
     def _auto_save_loop(self) -> None:
         """自動保存のループ（スレッドで実行）"""
@@ -439,14 +439,14 @@ class SessionManager:
             # 指定された間隔だけ待機（1秒ずつチェックして中断可能にする）
             for _ in range(interval):
                 with self._auto_save_lock:
-                    if not self._auto_save_running:
-                        break
+                if not self._auto_save_running:
+                    break
                 time.sleep(1)
 
     def stop_auto_save(self) -> None:
         """自動バックアップを停止します"""
         with self._auto_save_lock:
-            self._auto_save_running = False
+        self._auto_save_running = False
         
         if self._auto_save_thread and self._auto_save_thread.is_alive():
             self._auto_save_thread.join(timeout=2.0)
@@ -456,7 +456,7 @@ class SessionManager:
     def is_auto_save_running(self) -> bool:
         """自動バックアップが実行中かどうかを返します"""
         with self._auto_save_lock:
-            return self._auto_save_running
+        return self._auto_save_running
 
     def list_variables(
         self, 
@@ -529,9 +529,9 @@ class SessionManager:
                         "value": value_str,
                     }
                 except Exception:
-                    var_info[var_name] = {
-                        "type": type(var_value).__name__,
+                var_info[var_name] = {
+                    "type": type(var_value).__name__,
                         "value": "<unable to represent>",
-                    }
+                }
         
         return var_info

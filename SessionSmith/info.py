@@ -14,10 +14,10 @@ from pathlib import Path
 def _load_session_file(file_path: Union[str, Path], format: Optional[str] = None) -> tuple[Dict[str, Any], Optional[str]]:
     """
     セッションファイルを読み込みます（圧縮形式を自動検出）
-    
+
     Args:
         file_path: セッションファイルのパス
-        
+
     Returns:
         tuple: (セッションデータ, 圧縮形式)
         
@@ -29,7 +29,7 @@ def _load_session_file(file_path: Union[str, Path], format: Optional[str] = None
     
     if not file_path.exists():
         raise FileNotFoundError(f"Session file '{file_path}' not found.")
-    
+
     if not file_path.is_file():
         raise ValueError(f"'{file_path}' is not a file.")
     
@@ -153,7 +153,7 @@ def print_session_info(file_path: Union[str, Path]) -> None:
         IOError: ファイルの読み込みに失敗した場合
     """
     try:
-        info = get_session_info(file_path)
+    info = get_session_info(file_path)
     except Exception as e:
         print(f"Error loading session info: {e}")
         raise

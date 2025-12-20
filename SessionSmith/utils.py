@@ -26,7 +26,7 @@ def verify_session(file_path: Union[str, Path]) -> Tuple[bool, Optional[str]]:
     
     if not file_path.exists():
         return False, f"File not found: {file_path}"
-    
+
     if not file_path.is_file():
         return False, f"'{file_path}' is not a file."
 
@@ -112,13 +112,13 @@ def detect_compression(file_path: Union[str, Path]) -> Optional[str]:
     
     try:
         with open(str(file_path), 'rb') as f:
-            header = f.read(3)
+        header = f.read(3)
     except IOError as e:
         raise IOError(f"Failed to read file: {str(e)}") from e
 
     if len(header) < 2:
         return None
-    
+
     if header[:2] == b'\x1f\x8b':
         return 'gzip'
     elif len(header) >= 3 and header[:3] == b'BZh':

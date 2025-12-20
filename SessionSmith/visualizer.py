@@ -68,7 +68,7 @@ def visualize_algorithm_trace(
         
         try:
             with open(str(trace_file), 'r', encoding='utf-8') as f:
-                trace_data = json.load(f)
+            trace_data = json.load(f)
         except IOError as e:
             raise IOError(f"Failed to read trace file '{trace_file}': {str(e)}") from e
         except json.JSONDecodeError as e:
@@ -76,7 +76,7 @@ def visualize_algorithm_trace(
     
     if not trace_data:
         if debug:
-            print("トレースデータが空です")
+        print("トレースデータが空です")
         return
     
     if not isinstance(trace_data, list):
@@ -100,10 +100,10 @@ def visualize_algorithm_trace(
         all_vars: set[str] = set()
         for step in trace_data:
             if isinstance(step, dict):
-                all_vars.update(step.get("variables", {}).keys())
+            all_vars.update(step.get("variables", {}).keys())
         target_variables = sorted(list(all_vars))
         if debug:
-            print(f"デバッグ: 自動検出された変数: {target_variables}")
+        print(f"デバッグ: 自動検出された変数: {target_variables}")
     
     # 配列やリストの可視化
     array_vars: List[str] = []
@@ -120,7 +120,7 @@ def visualize_algorithm_trace(
                     array_vars.append(var_name)
                     found_array = True
                     if debug:
-                        print(f"デバッグ: 変数 '{var_name}' をリストとして検出（長さ: {len(var_data)}）")
+                    print(f"デバッグ: 変数 '{var_name}' をリストとして検出（長さ: {len(var_data)}）")
                     break
                 # 辞書形式の場合（シリアライズされたデータ）
                 elif isinstance(var_data, dict):
@@ -133,7 +133,7 @@ def visualize_algorithm_trace(
                             array_vars.append(var_name)
                             found_array = True
                             if debug:
-                                print(f"デバッグ: 変数 '{var_name}' をndarrayとして検出")
+                            print(f"デバッグ: 変数 '{var_name}' をndarrayとして検出")
                             break
                     elif var_type in ["list", "tuple"]:
                         # dataまたはsampleが存在するか確認
@@ -143,7 +143,7 @@ def visualize_algorithm_trace(
                             array_vars.append(var_name)
                             found_array = True
                             if debug:
-                                print(f"デバッグ: 変数 '{var_name}' を{var_type}として検出")
+                            print(f"デバッグ: 変数 '{var_name}' を{var_type}として検出")
                             break
         if not found_array and debug:
             # デバッグ: 変数が見つからない場合、詳細を表示
@@ -189,7 +189,7 @@ def print_trace_summary(
         
         try:
             with open(str(trace_file), 'r', encoding='utf-8') as f:
-                trace_data = json.load(f)
+            trace_data = json.load(f)
         except IOError as e:
             raise IOError(f"Failed to read trace file '{trace_file}': {str(e)}") from e
         except json.JSONDecodeError as e:

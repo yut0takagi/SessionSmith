@@ -86,7 +86,7 @@ class AlgorithmTracer:
         """
         if depth > self.max_depth:
             return "<max depth reached>"
-        
+            
         # 除外する型をチェック
         if isinstance(value, tuple(self.exclude_types)):
             return f"<{type(value).__name__}>"
@@ -107,7 +107,7 @@ class AlgorithmTracer:
                               for item in value[:100]]
                 }
             try:
-                return [self._serialize_value(item, depth + 1) for item in value]
+            return [self._serialize_value(item, depth + 1) for item in value]
             except RecursionError:
                 return f"<{type(value).__name__}: recursion error>"
         
@@ -122,8 +122,8 @@ class AlgorithmTracer:
                               for k, v in items}
                 }
             try:
-                return {str(k): self._serialize_value(v, depth + 1) 
-                       for k, v in value.items()}
+            return {str(k): self._serialize_value(v, depth + 1) 
+                   for k, v in value.items()}
             except RecursionError:
                 return f"<dict: recursion error>"
         
@@ -140,12 +140,12 @@ class AlgorithmTracer:
                         "sample": value.flatten()[:100].tolist()
                     }
                 try:
-                    return {
-                        "type": "ndarray",
-                        "shape": list(value.shape),
-                        "dtype": str(value.dtype),
-                        "data": value.tolist()
-                    }
+                return {
+                    "type": "ndarray",
+                    "shape": list(value.shape),
+                    "dtype": str(value.dtype),
+                    "data": value.tolist()
+                }
                 except Exception as e:
                     return f"<ndarray: conversion error: {str(e)}>"
         except ImportError:
@@ -172,11 +172,11 @@ class AlgorithmTracer:
         """
         try:
             state: Dict[str, Any] = {
-                "line_number": frame.f_lineno,
-                "filename": frame.f_code.co_filename,
-                "function_name": frame.f_code.co_name,
-                "variables": {}
-            }
+            "line_number": frame.f_lineno,
+            "filename": frame.f_code.co_filename,
+            "function_name": frame.f_code.co_name,
+            "variables": {}
+        }
         except AttributeError:
             # フレームが無効な場合
             return {
@@ -188,8 +188,8 @@ class AlgorithmTracer:
         
         # ローカル変数とグローバル変数を取得
         try:
-            local_vars = frame.f_locals.copy()
-            global_vars = frame.f_globals.copy()
+        local_vars = frame.f_locals.copy()
+        global_vars = frame.f_globals.copy()
         except Exception:
             return state
         
@@ -263,11 +263,11 @@ class AlgorithmTracer:
         
         self._is_tracing = False
         try:
-            sys.settrace(self.original_trace)
+        sys.settrace(self.original_trace)
         except Exception:
             pass
         finally:
-            self.original_trace = None
+        self.original_trace = None
     
     def __enter__(self) -> 'AlgorithmTracer':
         """コンテキストマネージャーとして使用"""
@@ -296,13 +296,13 @@ class AlgorithmTracer:
         if format == "json":
             try:
                 with open(str(file_path), 'w', encoding='utf-8') as f:
-                    json.dump(self.trace_data, f, indent=2, ensure_ascii=False)
+                json.dump(self.trace_data, f, indent=2, ensure_ascii=False)
             except IOError as e:
                 raise IOError(f"Failed to save trace data to {file_path}: {str(e)}") from e
         elif format == "pickle":
             try:
                 with open(str(file_path), 'wb') as f:
-                    pickle.dump(self.trace_data, f)
+                pickle.dump(self.trace_data, f)
             except IOError as e:
                 raise IOError(f"Failed to save trace data to {file_path}: {str(e)}") from e
         else:
@@ -329,13 +329,13 @@ class AlgorithmTracer:
         if format == "json":
             try:
                 with open(str(file_path), 'r', encoding='utf-8') as f:
-                    self.trace_data = json.load(f)
+                self.trace_data = json.load(f)
             except IOError as e:
                 raise IOError(f"Failed to load trace data from {file_path}: {str(e)}") from e
         elif format == "pickle":
             try:
                 with open(str(file_path), 'rb') as f:
-                    self.trace_data = pickle.load(f)
+                self.trace_data = pickle.load(f)
             except IOError as e:
                 raise IOError(f"Failed to load trace data from {file_path}: {str(e)}") from e
         else:
