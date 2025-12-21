@@ -1,0 +1,106 @@
+name: Release VS Code Extension
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'extension/**'
+      - '.github/workflows/extension-release.yml'
+
+jobs:
+  release-extension:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Get extension version
+        id: get_version
+        working-directory: extension
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "Extension version: ${VERSION}"
+
+      - name: Check if tag exists
+        id: check_tag
+        run: |
+          VERSION="${{ steps.get_version.outputs.version }}"
+          TAG_NAME="ext-v${VERSION}"
+          
+          git fetch --tags --force
+          if git rev-parse "${TAG_NAME}" >/dev/null 2>&1; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "Tag ${TAG_NAME} already exists, skipping release"
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "Tag ${TAG_NAME} does not exist, proceeding with release"
+          fi
+
+      - name: Install dependencies
+        if: steps.check_tag.outputs.exists == 'false'
+        working-directory: extension
+        run: npm install
+
+      - name: Install vsce
+        if: steps.check_tag.outputs.exists == 'false'
+        run: npm install -g @vscode/vsce
+
+      - name: Build extension
+        if: steps.check_tag.outputs.exists == 'false'
+        working-directory: extension
+        run: npm run compile
+
+      - name: Package extension
+        if: steps.check_tag.outputs.exists == 'false'
+        working-directory: extension
+        run: vsce package
+
+      - name: Publish to VS Code Marketplace
+        if: steps.check_tag.outputs.exists == 'false'
+        working-directory: extension
+        env:
+          VSCE_PAT: ${{ secrets.VSX_ACCESS_TOKEN }}
+        run: vsce publish -p $VSCE_PAT
+
+      - name: Create and push tag
+        if: steps.check_tag.outputs.exists == 'false'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ steps.get_version.outputs.version }}"
+          TAG_NAME="ext-v${VERSION}"
+          
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          git tag -a ${TAG_NAME} -m "Extension Release ${TAG_NAME}"
+          git push origin ${TAG_NAME}
+
+      - name: Upload VSIX to GitHub Release
+        if: steps.check_tag.outputs.exists == 'false'
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ext-v${{ steps.get_version.outputs.version }}
+          name: Extension v${{ steps.get_version.outputs.version }}
+          files: extension/*.vsix
+          body: |
+            ## VS Code Extension v${{ steps.get_version.outputs.version }}
+            
+            Install from [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=yut0takagi.sessionsmith)
+            
+            Or download the `.vsix` file and install manually.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
