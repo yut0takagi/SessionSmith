@@ -67,5 +67,5 @@ MIT License
 
 ## リポジトリ
 
-https://github.com/yutotakagi/SessionSmith
+https://github.com/yut0takagi/SessionSmith
 
