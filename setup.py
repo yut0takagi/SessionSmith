@@ -41,6 +41,11 @@ setup(
         "visualization": ["matplotlib>=3.5.0"],
         "all": ["matplotlib>=3.5.0"],
     },
+    entry_points={
+        "console_scripts": [
+            "ssm=SessionSmith.cli:main",
+        ],
+    },
     author="YutoTAKAGI",
     author_email="yutotkg.1040@gmail.com",
     description="Simple session save/load utility for Jupyter notebooks using pickle",
@@ -57,7 +62,8 @@ setup(
         "Topic :: Software Development :: Libraries :: Python Modules",
         "Topic :: Scientific/Engineering",
         "Framework :: Jupyter",
+        "Environment :: Console",
     ],
     python_requires='>=3.9',
-    keywords="jupyter notebook session save load pickle serialization algorithm tracer visualization",
+    keywords="jupyter notebook session save load pickle serialization algorithm tracer visualization cli",
 )
