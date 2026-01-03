@@ -24,6 +24,7 @@ from SessionSmith.ssm import SSM, CheckpointContext
 class TestSSMInit:
     """SSM 初期化のテスト"""
 
+    @pytest.mark.timeout(10)
     def test_init_creates_directory(self, tmp_path):
         """初期化でディレクトリが作成されることを確認"""
         ssm = SSM(path=tmp_path)
@@ -35,6 +36,7 @@ class TestSSMInit:
         assert (tmp_path / ".ssm" / "objects").exists()
         assert (tmp_path / ".ssm" / "commits").exists()
 
+    @pytest.mark.timeout(10)
     def test_init_force(self, tmp_path):
         """force オプションのテスト"""
         ssm = SSM(path=tmp_path)
@@ -48,6 +50,7 @@ class TestSSMInit:
 
         assert ssm.is_initialized
 
+    @pytest.mark.timeout(10)
     def test_is_initialized(self, tmp_path):
         """is_initialized プロパティのテスト"""
         ssm = SSM(path=tmp_path)
@@ -62,6 +65,7 @@ class TestSSMInit:
 class TestSSMCommit:
     """SSM コミットのテスト"""
 
+    @pytest.mark.timeout(10)
     def test_commit_basic(self, tmp_path):
         """基本的なコミットテスト"""
         ssm = SSM(path=tmp_path, globals_dict={"a": 1, "b": [1, 2, 3]})
@@ -76,6 +80,7 @@ class TestSSMCommit:
         head = (tmp_path / ".ssm" / "HEAD").read_text().strip()
         assert head == commit_hash
 
+    @pytest.mark.timeout(10)
     def test_commit_creates_objects(self, tmp_path):
         """コミットでオブジェクトが作成されることを確認"""
         ssm = SSM(path=tmp_path, globals_dict={"a": 1})
@@ -92,6 +97,7 @@ class TestSSMCommit:
 class TestSSMLog:
     """SSM ログのテスト"""
 
+    @pytest.mark.timeout(10)
     def test_log_empty(self, tmp_path):
         """コミットがない場合のテスト"""
         ssm = SSM(path=tmp_path, globals_dict={})
@@ -101,6 +107,7 @@ class TestSSMLog:
 
         assert commits == []
 
+    @pytest.mark.timeout(10)
     def test_log_with_commits(self, tmp_path):
         """コミットがある場合のテスト"""
         ssm = SSM(path=tmp_path, globals_dict={"a": 1})
@@ -119,6 +126,7 @@ class TestSSMLog:
 class TestSSMCheckout:
     """SSM チェックアウトのテスト"""
 
+    @pytest.mark.timeout(10)
     def test_checkout_restores_variables(self, tmp_path):
         """チェックアウトで変数が復元されることを確認"""
         globals_dict = {"a": 1}
@@ -139,6 +147,7 @@ class TestSSMCheckout:
 class TestSSMConfig:
     """SSM 設定のテスト"""
 
+    @pytest.mark.timeout(10)
     def test_config_get_all(self, tmp_path):
         """全設定の取得テスト"""
         ssm = SSM(path=tmp_path)
@@ -149,6 +158,7 @@ class TestSSMConfig:
         assert "version" in config
         assert "exclude" in config
 
+    @pytest.mark.timeout(10)
     def test_config_set(self, tmp_path):
         """設定の変更テスト"""
         ssm = SSM(path=tmp_path)
@@ -163,6 +173,7 @@ class TestSSMConfig:
 class TestSSMExclude:
     """SSM 除外リストのテスト"""
 
+    @pytest.mark.timeout(10)
     def test_exclude_adds_to_list(self, tmp_path):
         """除外リストへの追加テスト"""
         ssm = SSM(path=tmp_path)
@@ -178,6 +189,7 @@ class TestSSMExclude:
 class TestSSMExceptions:
     """SSM 例外テスト"""
 
+    @pytest.mark.timeout(10)
     def test_not_initialized_error(self, tmp_path):
         """初期化されていない場合のエラーテスト"""
         ssm = SSM(path=tmp_path, globals_dict={"a": 1})
@@ -185,6 +197,7 @@ class TestSSMExceptions:
         with pytest.raises(SSMNotInitializedError):
             ssm.commit("test")
 
+    @pytest.mark.timeout(10)
     def test_commit_not_found_error(self, tmp_path):
         """コミットが見つからない場合のエラーテスト"""
         ssm = SSM(path=tmp_path, globals_dict={"a": 1})
@@ -194,6 +207,7 @@ class TestSSMExceptions:
         with pytest.raises(SSMCommitNotFoundError):
             ssm.checkout("nonexistent")
 
+    @pytest.mark.timeout(10)
     def test_no_commits_error(self, tmp_path):
         """コミットがない場合のcheckoutエラーテスト"""
         ssm = SSM(path=tmp_path, globals_dict={"a": 1})
@@ -202,6 +216,7 @@ class TestSSMExceptions:
         with pytest.raises(SSMNoCommitsError):
             ssm.checkout()
 
+    @pytest.mark.timeout(10)
     def test_validation_error_message_too_long(self, tmp_path):
         """メッセージが長すぎる場合のバリデーションエラーテスト"""
         ssm = SSM(path=tmp_path, globals_dict={"a": 1})
@@ -211,6 +226,7 @@ class TestSSMExceptions:
         with pytest.raises(ValidationError):
             ssm.commit(long_message)
 
+    @pytest.mark.timeout(10)
     def test_validation_error_author_too_long(self, tmp_path):
         """作成者名が長すぎる場合のバリデーションエラーテスト"""
         ssm = SSM(path=tmp_path, globals_dict={"a": 1})
@@ -224,6 +240,7 @@ class TestSSMExceptions:
 class TestSSMRobustness:
     """SSM 堅牢性テスト"""
 
+    @pytest.mark.timeout(10)
     def test_empty_variables(self, tmp_path):
         """空の変数辞書でコミットした場合のテスト"""
         ssm = SSM(path=tmp_path, globals_dict={})
@@ -233,6 +250,7 @@ class TestSSMRobustness:
         result = ssm.commit("test")
         assert result == ""
 
+    @pytest.mark.timeout(10)
     def test_short_hash_checkout(self, tmp_path):
         """短縮ハッシュでのチェックアウトテスト"""
         ssm = SSM(path=tmp_path, globals_dict={"a": 1})
@@ -244,6 +262,7 @@ class TestSSMRobustness:
         # 短縮ハッシュでチェックアウト
         ssm.checkout(short_hash)
 
+    @pytest.mark.timeout(10)
     def test_multiple_commits_log_order(self, tmp_path):
         """複数コミットのログ順序テスト"""
         ssm = SSM(path=tmp_path, globals_dict={"a": 1})
@@ -260,6 +279,7 @@ class TestSSMRobustness:
         assert logs[1]["message"] == "Second"
         assert logs[2]["message"] == "First"
 
+    @pytest.mark.timeout(10)
     def test_reinit_preserves_nothing_without_force(self, tmp_path):
         """force なしの再初期化は何も変更しない"""
         ssm = SSM(path=tmp_path, globals_dict={"a": 1})
@@ -274,6 +294,7 @@ class TestSSMRobustness:
         logs = ssm.log()
         assert len(logs) == 1
 
+    @pytest.mark.timeout(10)
     def test_reinit_clears_with_force(self, tmp_path):
         """force ありの再初期化はすべてクリア"""
         ssm = SSM(path=tmp_path, globals_dict={"a": 1})
@@ -292,6 +313,7 @@ class TestSSMRobustness:
 class TestSSMFormatCompatibility:
     """SSM 形式互換性テスト"""
 
+    @pytest.mark.timeout(10)
     def test_export_to_pickle(self, tmp_path):
         """Pickle形式へのエクスポートテスト"""
         ssm = SSM(path=tmp_path, globals_dict={"a": 1, "b": [1, 2, 3]})
@@ -314,6 +336,7 @@ class TestSSMFormatCompatibility:
         assert data["a"] == 1
         assert data["b"] == [1, 2, 3]
 
+    @pytest.mark.timeout(10)
     def test_export_to_json(self, tmp_path):
         """JSON形式へのエクスポートテスト"""
         ssm = SSM(path=tmp_path, globals_dict={"a": 1, "b": [1, 2, 3]})
@@ -335,6 +358,7 @@ class TestSSMFormatCompatibility:
         assert "a" in data
         assert data["a"] == 1
 
+    @pytest.mark.timeout(10)
     def test_import_from_pickle(self, tmp_path):
         """Pickle形式からのインポートテスト"""
         # 従来形式で保存
@@ -355,6 +379,7 @@ class TestSSMFormatCompatibility:
         logs = ssm.log()
         assert len(logs) == 1
 
+    @pytest.mark.timeout(10)
     def test_import_from_json(self, tmp_path):
         """JSON形式からのインポートテスト"""
         # 従来形式で保存
@@ -371,6 +396,7 @@ class TestSSMFormatCompatibility:
 
         assert commit_hash
 
+    @pytest.mark.timeout(10)
     def test_convert_pickle_to_json(self, tmp_path):
         """Pickle→JSON変換テスト"""
         # Pickleファイルを作成
@@ -397,6 +423,7 @@ class TestSSMFormatCompatibility:
         assert data["a"] == 1
         assert data["b"] == [1, 2, 3]
 
+    @pytest.mark.timeout(10)
     def test_export_specific_commit(self, tmp_path):
         """特定コミットのエクスポートテスト"""
         ssm = SSM(path=tmp_path, globals_dict={"a": 1})
@@ -545,6 +572,7 @@ class TestSSMCheckpoint:
         # 最大数を超えないこと
         assert len(checkpoints) <= max_cp + 1  # +1 は終了時の final checkpoint
 
+    @pytest.mark.timeout(10)
     def test_checkpoint_no_checkpoints_error(self, tmp_path):
         """チェックポイントがない場合の復元エラーテスト"""
         ssm = SSM(path=tmp_path, globals_dict={})
@@ -587,6 +615,7 @@ class TestSSMCheckpoint:
 class TestSSMLargeData:
     """大規模データ処理のテスト"""
 
+    @pytest.mark.timeout(30)
     def test_large_variable_warning(self, tmp_path):
         """大きな変数の警告テスト"""
         # 約10MBのデータ
@@ -599,6 +628,7 @@ class TestSSMLargeData:
         commit_hash = ssm.commit("Large data commit")
         assert commit_hash
 
+    @pytest.mark.timeout(10)
     def test_variable_size_check(self, tmp_path):
         """変数サイズチェックテスト"""
         ssm = SSM(path=tmp_path, globals_dict={"small": 1, "medium": list(range(1000))})

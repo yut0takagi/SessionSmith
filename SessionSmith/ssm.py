@@ -679,7 +679,8 @@ class SSM:
         try:
             config = self._read_json(self.ssm_path / self.CONFIG_FILE)
             if "language" in config:
-                i18n.set_language(config["language"])
+                # 循環参照を避けるため、save_to_ssm=Falseを指定
+                i18n.set_language(config["language"], save_to_ssm=False)
         except Exception:
             pass  # 設定ファイルの読み込みに失敗しても続行
 
@@ -1655,6 +1656,7 @@ class SSM:
             globals_dict=variables,
             compress=compress,
             format=format,
+            use_ssm=False,  # 循環参照を避けるため
         )
 
         logger.info(f"Exported {len(variables)} variables to {output_path}")
@@ -1705,6 +1707,7 @@ class SSM:
             file_path=input_path,
             globals_dict=loaded_vars,
             format=format,
+            use_ssm=False,  # 循環参照を避けるため
         )
 
         if not loaded_vars:
@@ -1776,6 +1779,7 @@ class SSM:
             file_path=input_path,
             globals_dict=loaded_vars,
             format=input_format,
+            use_ssm=False,  # 循環参照を避けるため
         )
 
         # 書き込み
@@ -1784,6 +1788,7 @@ class SSM:
             globals_dict=loaded_vars,
             format=output_format,
             compress=compress,
+            use_ssm=False,  # 循環参照を避けるため
         )
 
         print(f"✓ Converted {len(loaded_vars)} variables")
@@ -1817,10 +1822,10 @@ class SSM:
         # 値を設定
         config[key] = value
         self._write_json(config_path, config)
-        # 言語設定の場合はグローバル設定も更新
+        # 言語設定の場合はグローバル設定も更新（循環参照を避けるためsave_to_ssm=False）
         if key == "language":
             try:
-                i18n.set_language(value)
+                i18n.set_language(value, save_to_ssm=False)
             except Exception:
                 pass
         info_msg = i18n.translate("msg.operation_completed")
