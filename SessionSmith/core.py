@@ -135,7 +135,7 @@ def _get_globals_dict(globals_dict: Optional[dict[str, Any]], depth: int = 2, co
         del frame
         return result
     except Exception as e:
-        raise RuntimeError(f"Failed to get globals dict: {e}")
+        raise RuntimeError(f"Failed to get globals dict: {e}") from e
 
 
 def save_session(
@@ -479,7 +479,7 @@ def load_session(
             if verbose:
                 logger.warning(f"Failed to load from SSM, falling back to direct file load: {e}")
             if file_path is None:
-                raise FileNotFoundError("No file path specified and SSM is not available")
+                raise FileNotFoundError("No file path specified and SSM is not available") from None
             use_ssm = False
 
     # 従来の方法（直接ファイルから読み込み）

@@ -125,6 +125,9 @@ select = [
 ignore = [
     "E501",  # line too long (handled by black)
     "B008",  # do not perform function calls in argument defaults
+    "B904",  # raise from err (意図的に使用)
+    "F401",  # 未使用インポート（オプショナル依存のため）
+    "F821",  # 未定義名（IPython環境でのみ利用可能な関数のため）
 ]
 
 [tool.mypy]

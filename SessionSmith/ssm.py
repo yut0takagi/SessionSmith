@@ -40,7 +40,6 @@ from .exceptions import (
     SSMCommitNotFoundError,
     SSMConfigError,
     SSMError,
-    SSMMergeConflictError,
     SSMNoCommitsError,
     SSMNotInitializedError,
     SSMRemoteNotFoundError,
@@ -1138,7 +1137,7 @@ class SSM:
             full_hash = self._resolve_hash(commit_hash)
         except ValueError:
             logger.error(f"Commit not found: {commit_hash}")
-            raise SSMCommitNotFoundError(commit_hash)
+            raise SSMCommitNotFoundError(commit_hash) from None
 
         commit_path = self.ssm_path / self.COMMITS_DIR / f"{full_hash}.json"
         if not commit_path.exists():
@@ -1339,7 +1338,7 @@ class SSM:
             info_msg = i18n.translate("info.checkpoint_restored", restored_count=len(variables))
             print(f"✓ {info_msg}")
         except Exception as e:
-            raise RuntimeError(f"Failed to recover: {e}")
+            raise RuntimeError(f"Failed to recover: {e}") from e
 
     # ========== チェックポイント機能（長時間実行対応） ==========
 
@@ -2084,7 +2083,7 @@ class SSM:
             try:
                 commit_hash = self._resolve_hash(commit_hash)
             except ValueError:
-                raise SSMCommitNotFoundError(commit_hash)
+                raise SSMCommitNotFoundError(commit_hash) from None
 
         # タグファイルを作成
         tag_file = self.ssm_path / self.TAGS_DIR / tag_name

@@ -15,7 +15,7 @@ except ImportError:
     MSGPACK_AVAILABLE = False
 
 try:
-    import h5py
+    import h5py  # noqa: F401
     HDF5_AVAILABLE = True
 except ImportError:
     HDF5_AVAILABLE = False

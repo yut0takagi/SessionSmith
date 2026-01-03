@@ -105,7 +105,7 @@ class SessionManager:
             del frame
             return result
         except Exception as e:
-            raise RuntimeError(f"Failed to get globals dict: {e}")
+            raise RuntimeError(f"Failed to get globals dict: {e}") from e
 
     def save(
         self,

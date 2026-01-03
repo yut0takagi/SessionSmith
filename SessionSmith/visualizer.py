@@ -12,8 +12,8 @@ from .visualizer_generic import visualize_generic as _visualize_generic
 
 # matplotlibはオプショナル依存として扱う
 try:
-    import matplotlib.animation as anim_module
-    import matplotlib.pyplot as plt
+    import matplotlib.animation as anim_module  # noqa: F401
+    import matplotlib.pyplot as plt  # noqa: F401
     MATPLOTLIB_AVAILABLE = True
 except ImportError:
     MATPLOTLIB_AVAILABLE = False
