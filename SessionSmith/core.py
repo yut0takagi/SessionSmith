@@ -240,9 +240,8 @@ def save_session(
             use_ssm = False
 
     # 従来の方法（直接ファイルに保存）
-    if not use_ssm:
-        # バリデーション
-        file_path = _validate_file_path(file_path)
+    # バリデーション
+    file_path = _validate_file_path(file_path)
     compress_type = _validate_compress_option(compress)
     on_error = _validate_on_error_option(on_error)
     globals_dict = _get_globals_dict(globals_dict)
@@ -483,77 +482,76 @@ def load_session(
             use_ssm = False
 
     # 従来の方法（直接ファイルから読み込み）
-    if not use_ssm:
-        # バリデーション
-        if file_path is None:
-            raise ValueError("file_path is required when use_ssm=False")
+    # バリデーション
+    if file_path is None:
+        raise ValueError("file_path is required when use_ssm=False")
 
-        file_path = _validate_file_path(file_path)
+    file_path = _validate_file_path(file_path)
 
-        if not file_path.exists():
-            raise FileNotFoundError(f"Session file '{file_path}' not found.")
+    if not file_path.exists():
+        raise FileNotFoundError(f"Session file '{file_path}' not found.")
 
-        if not file_path.is_file():
-            raise ValueError(f"'{file_path}' is not a file.")
+    if not file_path.is_file():
+        raise ValueError(f"'{file_path}' is not a file.")
 
-        # load_sessionでは元のグローバル変数を変更する必要があるため、copy=False
-        globals_dict = _get_globals_dict(globals_dict, copy=False)
+    # load_sessionでは元のグローバル変数を変更する必要があるため、copy=False
+    globals_dict = _get_globals_dict(globals_dict, copy=False)
 
     if include is not None and not isinstance(include, list):
         raise TypeError(f"include must be a list, got {type(include).__name__}")
 
-        if exclude is not None and not isinstance(exclude, list):
-            raise TypeError(f"exclude must be a list, got {type(exclude).__name__}")
+    if exclude is not None and not isinstance(exclude, list):
+        raise TypeError(f"exclude must be a list, got {type(exclude).__name__}")
 
-        # 形式の検出
-        detected_format = detect_format(file_path, format)
+    # 形式の検出
+    detected_format = detect_format(file_path, format)
 
-        # ファイルを読み込む（形式に応じて）
-        session: dict[str, Any] = {}
+    # ファイルを読み込む（形式に応じて）
+    session: dict[str, Any] = {}
 
+    try:
+        if detected_format == "pickle":
+            session = load_pickle(file_path)
+        elif detected_format == "json":
+            session = load_json(file_path)
+        elif detected_format == "msgpack":
+            session = load_msgpack(file_path)
+        elif detected_format == "hdf5":
+            session = load_hdf5(file_path)
+        else:
+            raise ValueError(f"Unsupported format: {detected_format}")
+    except Exception as e:
+        raise OSError(f"Failed to load session from {file_path}: {str(e)}") from e
+
+    # セッションが辞書でない場合
+    if not isinstance(session, dict):
+        raise ValueError(f"Session file '{file_path}' does not contain a dictionary")
+
+    # メタデータを除外
+    metadata = session.pop("__metadata__", None)
+    if metadata and verbose:
+        print(f"Session metadata: {metadata}")
+        print(f"Format: {detected_format}")
+
+    # フィルタリング
+    if include:
+        session = {k: v for k, v in session.items() if k in include}
+    if exclude:
+        session = {k: v for k, v in session.items() if k not in exclude}
+
+    # グローバル変数に更新
+    loaded_vars: list[str] = []
+    for k, v in session.items():
         try:
-            if detected_format == "pickle":
-                session = load_pickle(file_path)
-            elif detected_format == "json":
-                session = load_json(file_path)
-            elif detected_format == "msgpack":
-                session = load_msgpack(file_path)
-            elif detected_format == "hdf5":
-                session = load_hdf5(file_path)
-            else:
-                raise ValueError(f"Unsupported format: {detected_format}")
+            globals_dict[k] = v
+            loaded_vars.append(k)
+            if verbose:
+                print(f"Loaded variable: {k} ({type(v).__name__})")
         except Exception as e:
-            raise OSError(f"Failed to load session from {file_path}: {str(e)}") from e
+            if verbose:
+                warnings.warn(f"Failed to load variable '{k}': {str(e)}", UserWarning, stacklevel=2)
 
-        # セッションが辞書でない場合
-        if not isinstance(session, dict):
-            raise ValueError(f"Session file '{file_path}' does not contain a dictionary")
+    if verbose:
+        print(f"Loaded {len(loaded_vars)} variables")
 
-        # メタデータを除外
-        metadata = session.pop("__metadata__", None)
-        if metadata and verbose:
-            print(f"Session metadata: {metadata}")
-            print(f"Format: {detected_format}")
-
-        # フィルタリング
-        if include:
-            session = {k: v for k, v in session.items() if k in include}
-        if exclude:
-            session = {k: v for k, v in session.items() if k not in exclude}
-
-        # グローバル変数に更新
-        loaded_vars: list[str] = []
-        for k, v in session.items():
-            try:
-                globals_dict[k] = v
-                loaded_vars.append(k)
-                if verbose:
-                    print(f"Loaded variable: {k} ({type(v).__name__})")
-            except Exception as e:
-                if verbose:
-                    warnings.warn(f"Failed to load variable '{k}': {str(e)}", UserWarning, stacklevel=2)
-
-        if verbose:
-            print(f"Loaded {len(loaded_vars)} variables")
-
-        return session
+    return session

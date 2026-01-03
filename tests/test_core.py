@@ -26,7 +26,7 @@ class TestSaveSession:
             "c": {"key": "value"},
         }
 
-        save_session(file_path, globals_dict=test_vars)
+        save_session(file_path, globals_dict=test_vars, use_ssm=False)
 
         assert file_path.exists()
         assert file_path.stat().st_size > 0
@@ -40,9 +40,9 @@ class TestSaveSession:
             "exclude_me": 2,
         }
 
-        save_session(file_path, globals_dict=test_vars, exclude=["exclude_me"])
+        save_session(file_path, globals_dict=test_vars, exclude=["exclude_me"], use_ssm=False)
 
-        loaded = load_session(file_path, globals_dict={})
+        loaded = load_session(file_path, globals_dict={}, use_ssm=False)
 
         assert "keep" in loaded
         assert "exclude_me" not in loaded
@@ -54,11 +54,11 @@ class TestSaveSession:
         test_vars = {"data": list(range(1000))}
 
         # 非圧縮
-        save_session(file_path, globals_dict=test_vars, compress=False)
+        save_session(file_path, globals_dict=test_vars, compress=False, use_ssm=False)
         uncompressed_size = file_path.stat().st_size
 
         # 圧縮
-        save_session(file_path, globals_dict=test_vars, compress=True)
+        save_session(file_path, globals_dict=test_vars, compress=True, use_ssm=False)
         compressed_size = file_path.stat().st_size
 
         assert compressed_size < uncompressed_size
@@ -77,10 +77,10 @@ class TestLoadSession:
             "c": {"key": "value"},
         }
 
-        save_session(file_path, globals_dict=original)
+        save_session(file_path, globals_dict=original, use_ssm=False)
 
         restored = {}
-        load_session(file_path, globals_dict=restored)
+        load_session(file_path, globals_dict=restored, use_ssm=False)
 
         assert restored["a"] == 1
         assert restored["b"] == [1, 2, 3]
@@ -91,10 +91,10 @@ class TestLoadSession:
         file_path = tmp_path / "test.pkl"
 
         original = {"a": 1, "b": 2, "c": 3}
-        save_session(file_path, globals_dict=original)
+        save_session(file_path, globals_dict=original, use_ssm=False)
 
         restored = {}
-        load_session(file_path, globals_dict=restored, include=["a", "b"])
+        load_session(file_path, globals_dict=restored, include=["a", "b"], use_ssm=False)
 
         assert "a" in restored
         assert "b" in restored
@@ -105,7 +105,7 @@ class TestLoadSession:
         file_path = tmp_path / "nonexistent.pkl"
 
         with pytest.raises(FileNotFoundError):
-            load_session(file_path, globals_dict={})
+            load_session(file_path, globals_dict={}, use_ssm=False)
 
 
 class TestFormats:
@@ -116,10 +116,10 @@ class TestFormats:
         file_path = tmp_path / "test.json"
 
         original = {"a": 1, "b": [1, 2, 3]}
-        save_session(file_path, globals_dict=original, format="json")
+        save_session(file_path, globals_dict=original, format="json", use_ssm=False)
 
         restored = {}
-        load_session(file_path, globals_dict=restored, format="json")
+        load_session(file_path, globals_dict=restored, format="json", use_ssm=False)
 
         assert restored["a"] == 1
         assert restored["b"] == [1, 2, 3]
@@ -131,19 +131,19 @@ class TestValidation:
     def test_invalid_file_path_type(self, tmp_path):
         """無効なファイルパス型のテスト"""
         with pytest.raises(TypeError):
-            save_session(123, globals_dict={"a": 1})
+            save_session(123, globals_dict={"a": 1}, use_ssm=False)
 
     def test_empty_file_path(self, tmp_path):
         """空のファイルパスのテスト"""
         with pytest.raises(ValueError):
-            save_session("", globals_dict={"a": 1})
+            save_session("", globals_dict={"a": 1}, use_ssm=False)
 
     def test_invalid_compress_option(self, tmp_path):
         """無効な圧縮オプションのテスト"""
         file_path = tmp_path / "test.pkl"
 
         with pytest.raises(ValueError):
-            save_session(file_path, globals_dict={"a": 1}, compress="invalid")
+            save_session(file_path, globals_dict={"a": 1}, compress="invalid", use_ssm=False)
 
 
 class TestRobustness:
@@ -155,10 +155,10 @@ class TestRobustness:
 
         # 1MBのデータ
         large_data = {"data": list(range(100000))}
-        save_session(file_path, globals_dict=large_data)
+        save_session(file_path, globals_dict=large_data, use_ssm=False)
 
         restored = {}
-        load_session(file_path, globals_dict=restored)
+        load_session(file_path, globals_dict=restored, use_ssm=False)
 
         assert len(restored["data"]) == 100000
 
@@ -168,10 +168,10 @@ class TestRobustness:
         special_dir.mkdir()
         file_path = special_dir / "test.pkl"
 
-        save_session(file_path, globals_dict={"a": 1})
+        save_session(file_path, globals_dict={"a": 1}, use_ssm=False)
 
         restored = {}
-        load_session(file_path, globals_dict=restored)
+        load_session(file_path, globals_dict=restored, use_ssm=False)
 
         assert restored["a"] == 1
 
@@ -188,10 +188,10 @@ class TestRobustness:
                 }
             }
         }
-        save_session(file_path, globals_dict=nested)
+        save_session(file_path, globals_dict=nested, use_ssm=False)
 
         restored = {}
-        load_session(file_path, globals_dict=restored)
+        load_session(file_path, globals_dict=restored, use_ssm=False)
 
         assert restored["level1"]["level2"]["level3"]["value"] == 42
 
