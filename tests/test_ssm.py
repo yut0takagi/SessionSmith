@@ -421,6 +421,7 @@ class TestSSMFormatCompatibility:
 class TestSSMCheckpoint:
     """SSM チェックポイント機能のテスト（長時間実行対応）"""
 
+    @pytest.mark.timeout(10)
     def test_checkpoint_context_basic(self, tmp_path):
         """基本的なチェックポイントコンテキストのテスト"""
         ssm = SSM(path=tmp_path, globals_dict={"counter": 0})
@@ -441,6 +442,7 @@ class TestSSMCheckpoint:
         checkpoints = list(checkpoint_dir.glob("checkpoint_*.gz"))
         assert len(checkpoints) >= 1
 
+    @pytest.mark.timeout(10)
     def test_checkpoint_with_metrics(self, tmp_path):
         """メトリクス付きチェックポイントのテスト"""
         ssm = SSM(path=tmp_path, globals_dict={"loss": 1.0})
@@ -459,6 +461,7 @@ class TestSSMCheckpoint:
         if checkpoints:
             assert "metrics" in checkpoints[0]
 
+    @pytest.mark.timeout(10)
     def test_checkpoint_restore(self, tmp_path):
         """チェックポイントからの復元テスト"""
         globals_dict = {"value": 100}
@@ -479,6 +482,7 @@ class TestSSMCheckpoint:
         assert meta["restored_count"] > 0
         assert globals_dict["value"] == 200  # 復元された値
 
+    @pytest.mark.timeout(10)
     def test_checkpoint_list(self, tmp_path):
         """チェックポイント一覧テスト"""
         ssm = SSM(path=tmp_path, globals_dict={"x": 1})
@@ -501,6 +505,7 @@ class TestSSMCheckpoint:
             assert "timestamp" in cp
             assert "variable_count" in cp
 
+    @pytest.mark.timeout(10)
     def test_checkpoint_clean(self, tmp_path):
         """チェックポイントクリーンテスト"""
         ssm = SSM(path=tmp_path, globals_dict={"x": 1})
@@ -521,6 +526,7 @@ class TestSSMCheckpoint:
         after = ssm.list_checkpoints()
         assert len(after) == 0
 
+    @pytest.mark.timeout(15)
     def test_checkpoint_max_limit(self, tmp_path):
         """チェックポイント最大数制限テスト"""
         ssm = SSM(path=tmp_path, globals_dict={"x": 1})
@@ -547,6 +553,7 @@ class TestSSMCheckpoint:
         with pytest.raises(FileNotFoundError):
             ssm.restore_checkpoint()
 
+    @pytest.mark.timeout(10)
     def test_checkpoint_elapsed_time(self, tmp_path):
         """経過時間追跡テスト"""
         ssm = SSM(path=tmp_path, globals_dict={"x": 1})
@@ -557,6 +564,7 @@ class TestSSMCheckpoint:
             assert cp.elapsed >= 0.4
             assert "0:00" in cp.elapsed_str
 
+    @pytest.mark.timeout(10)
     def test_checkpoint_summary(self, tmp_path):
         """サマリー取得テスト"""
         ssm = SSM(path=tmp_path, globals_dict={"x": 1})
@@ -607,6 +615,7 @@ class TestSSMLargeData:
 class TestSSMThreadSafety:
     """スレッドセーフティのテスト"""
 
+    @pytest.mark.timeout(10)
     def test_concurrent_commits(self, tmp_path):
         """並行コミットテスト"""
         ssm = SSM(path=tmp_path, globals_dict={"counter": 0})

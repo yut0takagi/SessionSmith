@@ -9,6 +9,7 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
       matrix:
         python-version: ['3.9', '3.10', '3.11', '3.12']
@@ -45,7 +46,7 @@ jobs:
       - name: Run tests
         run: |
           pip install -e ".[dev]"
-          pytest tests/ -v --tb=short
+          pytest tests/ -v --tb=short --timeout=300 -x
 
   lint:
     runs-on: ubuntu-latest
