@@ -2,8 +2,8 @@
 カスタムシリアライザー機能
 """
 
-from typing import Any, Callable, Optional, Dict, Type, Union
 import warnings
+from typing import Any, Callable
 
 
 class CustomSerializer:
@@ -14,11 +14,11 @@ class CustomSerializer:
 
     def __init__(self):
         """カスタムシリアライザーを初期化します"""
-        self.serializers: Dict[Type[Any], Callable[[Any], Any]] = {}
+        self.serializers: dict[type[Any], Callable[[Any], Any]] = {}
 
     def register(
-        self, 
-        obj_type: Type[Any], 
+        self,
+        obj_type: type[Any],
         serializer: Callable[[Any], Any]
     ) -> None:
         """
@@ -27,16 +27,16 @@ class CustomSerializer:
         Args:
             obj_type: シリアライズする型
             serializer: シリアライザー関数（obj -> serializable）
-            
+
         Raises:
             TypeError: obj_typeが型でない、またはserializerが呼び出し可能でない場合
         """
         if not isinstance(obj_type, type):
             raise TypeError(f"obj_type must be a type, got {type(obj_type).__name__}")
-        
+
         if not callable(serializer):
             raise TypeError("serializer must be callable")
-        
+
         self.serializers[obj_type] = serializer
 
     def serialize(self, obj: Any) -> Any:
@@ -52,7 +52,7 @@ class CustomSerializer:
         """
         if obj is None:
             return None
-        
+
         obj_type = type(obj)
 
         # 登録されたシリアライザーをチェック（完全一致）
@@ -62,7 +62,7 @@ class CustomSerializer:
             except Exception as e:
                 warnings.warn(
                     f"Serializer for {obj_type.__name__} failed: {e}",
-                    UserWarning
+                    UserWarning, stacklevel=2
                 )
                 return obj
 
@@ -75,7 +75,7 @@ class CustomSerializer:
                     except Exception as e:
                         warnings.warn(
                             f"Serializer for {registered_type.__name__} failed: {e}",
-                            UserWarning
+                            UserWarning, stacklevel=2
                         )
                         return obj
             except Exception:
@@ -87,22 +87,22 @@ class CustomSerializer:
     def __call__(self, obj: Any) -> Any:
         """
         関数として呼び出せるようにする
-        
+
         Args:
             obj: シリアライズするオブジェクト
-            
+
         Returns:
             シリアライズされたオブジェクト
         """
         return self.serialize(obj)
 
-    def unregister(self, obj_type: Type[Any]) -> None:
+    def unregister(self, obj_type: type[Any]) -> None:
         """
         登録されたシリアライザーを削除します
-        
+
         Args:
             obj_type: 削除する型
-            
+
         Raises:
             KeyError: 指定された型が登録されていない場合
         """
@@ -110,10 +110,10 @@ class CustomSerializer:
             raise KeyError(f"No serializer registered for {obj_type.__name__}")
         del self.serializers[obj_type]
 
-    def list_registered(self) -> list[Type[Any]]:
+    def list_registered(self) -> list[type[Any]]:
         """
         登録されている型のリストを取得します
-        
+
         Returns:
             list: 登録されている型のリスト
         """
@@ -123,10 +123,10 @@ class CustomSerializer:
 def create_serializer() -> CustomSerializer:
     """
     カスタムシリアライザーを作成します
-    
+
     Returns:
         CustomSerializer: 新しいカスタムシリアライザーインスタンス
-        
+
     Example:
         >>> serializer = create_serializer()
         >>> serializer.register(MyClass, lambda x: x.to_dict())

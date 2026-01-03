@@ -5,58 +5,57 @@ SessionSmithの詳細なドキュメントです。
 ## ドキュメント一覧
 
 ### 📖 [基本的な使い方](getting-started.md)
-保存・復元の基本的な使い方、圧縮、セレクティブロードなどの機能を説明します。
+クイックスタートと基本操作。複数ファイル使用時の注意事項。
 
-### 🔄 [バージョン管理](version-control.md)
-Git風のバージョン管理機能の使い方を説明します。コミット、チェックアウト、履歴管理など。
+### 🚀 [SSM - Git風セッション管理](ssm-guide.md)
+`.ssm/` ディレクトリベースのセッション管理。基本コマンド、設定、チェックポイント。
 
-### 📈 [アルゴリズム実行トレーサー](algorithm-tracer.md)
-アルゴリズムの実行を1行ごとにトレースし、可視化する機能の使い方を説明します。
+### 🌿 [バージョン管理機能](version-control.md)
+ブランチ、マージ、タグ、リモート機能の実践的な使用例。
+
+### ⏱️ [チェックポイント - 長時間学習対応](checkpoint-guide.md)
+機械学習の長時間学習に対応したチェックポイント機能。
+
+### 💻 [CLI リファレンス](cli-reference.md)
+コマンドラインツール `ssm` の使い方。
 
 ### 📚 [APIリファレンス](api-reference.md)
-全APIの詳細なリファレンスです。パラメータ、戻り値、使用例を含みます。
+主要APIの詳細なリファレンス。
+
+### 📈 [アルゴリズム実行トレーサー](algorithm-tracer.md)
+アルゴリズムの実行を1行ごとにトレースし、可視化する機能。
+
+### 🌐 [国際化（i18n）ガイド](i18n-guide.md)
+多言語対応（日本語・英語）の設定方法。
 
 ## クイックリファレンス
 
-### 基本的な保存・復元
+### SSM（推奨）
 
 ```python
-from SessionSmith import save_session, load_session
+from SessionSmith import ssm
 
-save_session("session.pkl")
-load_session("session.pkl")
+ssm.init()                    # 初期化
+ssm.commit("Initial state")   # コミット
+ssm.log()                     # 履歴表示
+ssm.checkout("abc123")        # 復元
+ssm.continuous()              # 常時記録
 ```
 
-### SessionManager
+### チェックポイント
 
 ```python
-from SessionSmith import SessionManager
-
-manager = SessionManager()
-manager.save("session.pkl")
-manager.load("session.pkl")
+with ssm.checkpoint(interval=300) as cp:
+    for epoch in range(1000):
+        loss = train()
+        cp.step(loss=loss)
 ```
 
 ### バージョン管理
 
 ```python
-manager = SessionManager(enable_version_control=True)
-manager.save("session.pkl", commit_message="Initial state")
-manager.log()
-manager.checkout(message="Initial state")
+ssm.branch('feature', create=True)
+ssm.checkout_branch('feature')
+ssm.merge('feature')
+ssm.tag('v1.0.0')
 ```
-
-### アルゴリズムトレーサー
-
-```python
-from SessionSmith import AlgorithmTracer, visualize_algorithm_trace
-
-with AlgorithmTracer(target_variables=["arr"]) as tracer:
-    bubble_sort(arr)
-
-visualize_algorithm_trace(
-    trace_data=tracer.get_trace_data(),
-    output_file="animation.gif"
-)
-```
-

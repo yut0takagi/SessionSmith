@@ -42,8 +42,8 @@ config.yaml
 temp/
 *.pkl
 
-# SessionSmith version control
-.sessionvc/
+# SessionSmith session management
+.ssm/
 
 # build artifacts
 build/
@@ -55,3 +55,4 @@ extension/node_modules/
 extension/out/
 extension/*.vsix
 .env
+RELEASE_CHECKLIST.md
