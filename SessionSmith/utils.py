@@ -2,15 +2,12 @@
 ユーティリティ関数（検証、圧縮など）
 """
 
-import pickle
-import gzip
-import bz2
 import os
-from typing import Optional, Tuple, Union, Dict, Any
 from pathlib import Path
+from typing import Optional, Union
 
 
-def verify_session(file_path: Union[str, Path]) -> Tuple[bool, Optional[str]]:
+def verify_session(file_path: Union[str, Path]) -> tuple[bool, Optional[str]]:
     """
     セッションファイルの整合性を検証します
 
@@ -23,19 +20,19 @@ def verify_session(file_path: Union[str, Path]) -> Tuple[bool, Optional[str]]:
         is_validがFalseの場合、error_messageにエラーの説明が含まれる
     """
     file_path = Path(file_path)
-    
+
     if not file_path.exists():
         return False, f"File not found: {file_path}"
-    
+
     if not file_path.is_file():
         return False, f"'{file_path}' is not a file."
 
     try:
-        from .formats import detect_format, load_pickle, load_json, load_msgpack, load_hdf5
-        
+        from .formats import detect_format, load_hdf5, load_json, load_msgpack, load_pickle
+
         # 形式を自動検出して読み込む
         detected_format = detect_format(file_path)
-        
+
         try:
             if detected_format == "pickle":
                 session = load_pickle(file_path)
@@ -75,16 +72,16 @@ def get_file_size(file_path: Union[str, Path]) -> int:
 
     Returns:
         int: ファイルサイズ（バイト）
-        
+
     Raises:
         FileNotFoundError: ファイルが存在しない場合
         OSError: ファイル情報の取得に失敗した場合
     """
     file_path = Path(file_path)
-    
+
     if not file_path.exists():
         raise FileNotFoundError(f"File not found: {file_path}")
-    
+
     try:
         return os.path.getsize(str(file_path))
     except OSError as e:
@@ -100,25 +97,25 @@ def detect_compression(file_path: Union[str, Path]) -> Optional[str]:
 
     Returns:
         str or None: 'gzip', 'bz2', または None
-        
+
     Raises:
         FileNotFoundError: ファイルが存在しない場合
         IOError: ファイルの読み込みに失敗した場合
     """
     file_path = Path(file_path)
-    
+
     if not file_path.exists():
         raise FileNotFoundError(f"File not found: {file_path}")
-    
+
     try:
         with open(str(file_path), 'rb') as f:
             header = f.read(3)
-    except IOError as e:
-        raise IOError(f"Failed to read file: {str(e)}") from e
+    except OSError as e:
+        raise OSError(f"Failed to read file: {str(e)}") from e
 
     if len(header) < 2:
         return None
-    
+
     if header[:2] == b'\x1f\x8b':
         return 'gzip'
     elif len(header) >= 3 and header[:3] == b'BZh':

@@ -2,9 +2,10 @@
 セッション比較機能
 """
 
-from typing import Dict, List, Set, Any, Union
-from pathlib import Path
 import warnings
+from pathlib import Path
+from typing import Any, Union
+
 from .core import load_session
 from .info import list_session_variables
 
@@ -13,7 +14,7 @@ def compare_sessions(
     file_path1: Union[str, Path],
     file_path2: Union[str, Path],
     detailed: bool = False
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     2つのセッションファイルを比較します
 
@@ -24,7 +25,7 @@ def compare_sessions(
 
     Returns:
         dict: 比較結果（追加、削除、変更された変数のリスト）
-        
+
     Raises:
         FileNotFoundError: いずれかのファイルが存在しない場合
         IOError: ファイルの読み込みに失敗した場合
@@ -38,11 +39,11 @@ def compare_sessions(
     file_path1 = _resolve_and_check(file_path1)
     file_path2 = _resolve_and_check(file_path2)
 
-    def _get_variable_set(path: Path) -> Set[str]:
+    def _get_variable_set(path: Path) -> set[str]:
         try:
             return set(list_session_variables(path))
         except Exception as e:
-            raise IOError(f"Failed to read session variables: {str(e)}") from e
+            raise OSError(f"Failed to read session variables: {str(e)}") from e
 
     vars1 = _get_variable_set(file_path1)
     vars2 = _get_variable_set(file_path2)
@@ -52,26 +53,26 @@ def compare_sessions(
     added = vars2 - vars1
     removed = vars1 - vars2
 
-    result: Dict[str, Any] = {
+    result: dict[str, Any] = {
         "file1": str(file_path1),
         "file2": str(file_path2),
-        "common_variables": sorted(list(common)),
-        "added_variables": sorted(list(added)),
-        "removed_variables": sorted(list(removed)),
+        "common_variables": sorted(common),
+        "added_variables": sorted(added),
+        "removed_variables": sorted(removed),
     }
 
     # 詳細な比較（値の変更を検出）
     if detailed:
-        changed: List[str] = []
+        changed: list[str] = []
         # 一時的な名前空間でロードして比較
-        temp_globals1: Dict[str, Any] = {}
-        temp_globals2: Dict[str, Any] = {}
+        temp_globals1: dict[str, Any] = {}
+        temp_globals2: dict[str, Any] = {}
 
         try:
             load_session(file_path1, globals_dict=temp_globals1)
             load_session(file_path2, globals_dict=temp_globals2)
         except Exception as e:
-            raise IOError(f"Failed to load sessions for comparison: {str(e)}") from e
+            raise OSError(f"Failed to load sessions for comparison: {str(e)}") from e
 
         for var_name in common:
             val1 = temp_globals1.get(var_name)
@@ -94,7 +95,7 @@ def compare_sessions(
                 # 比較できない場合は変更されたとみなす
                 warnings.warn(
                     f"Could not compare variable '{var_name}': {str(e)}",
-                    UserWarning
+                    UserWarning, stacklevel=2
                 )
                 changed.append(var_name)
 
@@ -104,8 +105,8 @@ def compare_sessions(
 
 
 def print_comparison(
-    file_path1: Union[str, Path], 
-    file_path2: Union[str, Path], 
+    file_path1: Union[str, Path],
+    file_path2: Union[str, Path],
     detailed: bool = False
 ) -> None:
     """
@@ -115,7 +116,7 @@ def print_comparison(
         file_path1: 最初のセッションファイルのパス
         file_path2: 2番目のセッションファイルのパス
         detailed: 詳細な比較情報を含めるか
-        
+
     Raises:
         FileNotFoundError: いずれかのファイルが存在しない場合
         IOError: ファイルの読み込みに失敗した場合

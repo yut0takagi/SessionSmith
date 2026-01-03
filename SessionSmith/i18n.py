@@ -5,10 +5,10 @@ SessionSmith 国際化（i18n）モジュール
 現在サポートしている言語: 日本語 (ja), 英語 (en)
 """
 
-import os
 import locale
-from typing import Dict, Optional, Any, Union
+import os
 from enum import Enum
+from typing import Any, Union
 
 
 class Language(Enum):
@@ -19,7 +19,7 @@ class Language(Enum):
 
 
 # 翻訳辞書
-_TRANSLATIONS: Dict[str, Dict[str, str]] = {
+_TRANSLATIONS: dict[str, dict[str, str]] = {
     "ja": {
         # エラーメッセージ
         "error.ssm_not_initialized": "SSMが初期化されていません: '{path}'. 'ssm.init()' または 'ssm init' を先に実行してください。",
@@ -54,7 +54,7 @@ _TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "error.remote_repository_not_found": "リモートリポジトリが見つかりません: {remote_url}",
         "error.tag_no_commit": "タグ '{tag_name}' にコミットが設定されていません",
         "error.merge_conflict": "マージコンフリクトが発生しました: ブランチ '{branch_name}' で {count} 個のコンフリクト",
-        
+
         # 警告メッセージ
         "warn.large_variable": "大きな変数が検出されました: '{name}' ({size_mb:.1f}MB)",
         "warn.skipped_variable": "変数 '{name}' をスキップしました: {reason}",
@@ -62,7 +62,7 @@ _TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "warn.checkpoint_failed": "チェックポイントの保存に失敗しました: {reason}",
         "warn.continuous_mode_unavailable": "常時記録モードはJupyter/IPython環境でのみ利用可能です",
         "warn.variable_conflict": "変数名の衝突が検出されました: ファイル '{previous_file}' と '{current_file}' で同じ変数名 ({vars}) が使用されています。複数のファイルから同じ変数名を使用する場合は注意してください。",
-        
+
         # 情報メッセージ
         "info.session_saved": "セッションを保存しました: {file_path} ({size:,} bytes, 形式: {format})",
         "info.session_loaded": "{count} 個の変数を読み込みました",
@@ -81,7 +81,7 @@ _TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "info.remote_added": "リモート '{name}' を追加しました: {url}",
         "info.push_completed": "リモート '{remote}' のブランチ '{branch}' にプッシュしました (コミット: {commit})",
         "info.pull_completed": "リモート '{remote}' のブランチ '{branch}' からプルしました (コミット: {commit})",
-        
+
         # 一般的なメッセージ
         "msg.no_variables": "保存する変数がありません",
         "msg.no_changes": "変更がありません",
@@ -123,7 +123,7 @@ _TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "error.remote_repository_not_found": "Remote repository not found: {remote_url}",
         "error.tag_no_commit": "Tag '{tag_name}' has no commit",
         "error.merge_conflict": "Merge conflict: {count} conflicts in branch '{branch_name}'",
-        
+
         # Warning messages
         "warn.large_variable": "Large variable detected: '{name}' ({size_mb:.1f}MB)",
         "warn.skipped_variable": "Skipped variable '{name}': {reason}",
@@ -136,12 +136,7 @@ _TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "warn.memory_warning": "Memory usage warning: {usage_percent:.1f}% used ({used_mb:.1f}MB used, {available_mb:.1f}MB available)",
         "warn.memory_critical": "Memory usage critical: {usage_percent:.1f}% used ({used_mb:.1f}MB used, {available_mb:.1f}MB available)",
         "info.cleanup_completed": "Cleanup completed: freed {freed_mb:.1f}MB",
-        "warn.disk_warning": "Disk space warning: {usage_percent:.1f}% used ({free_mb:.1f}MB free)",
-        "warn.disk_critical": "Disk space critical: {usage_percent:.1f}% used ({free_mb:.1f}MB free)",
-        "warn.memory_warning": "Memory usage warning: {usage_percent:.1f}% used ({used_mb:.1f}MB used, {available_mb:.1f}MB available)",
-        "warn.memory_critical": "Memory usage critical: {usage_percent:.1f}% used ({used_mb:.1f}MB used, {available_mb:.1f}MB available)",
-        "info.cleanup_completed": "Cleanup completed: freed {freed_mb:.1f}MB",
-        
+
         # Info messages
         "info.session_saved": "Session saved to {file_path} ({size:,} bytes, format: {format})",
         "info.session_loaded": "Loaded {count} variables",
@@ -160,7 +155,7 @@ _TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "info.remote_added": "Added remote '{name}': {url}",
         "info.push_completed": "Pushed to remote '{remote}' branch '{branch}' (commit: {commit})",
         "info.pull_completed": "Pulled from remote '{remote}' branch '{branch}' (commit: {commit})",
-        
+
         # General messages
         "msg.no_variables": "No variables to save",
         "msg.no_changes": "No changes",
@@ -178,7 +173,7 @@ _current_language: Language = Language.AUTO
 def detect_language() -> str:
     """
     システムのロケールから言語を自動検出
-    
+
     Returns:
         str: 言語コード ('ja' または 'en')
     """
@@ -190,13 +185,13 @@ def detect_language() -> str:
                 return "ja"
             if "en" in lang_env.lower() or "english" in lang_env.lower():
                 return "en"
-        
+
         # システムロケールをチェック
         system_locale = locale.getdefaultlocale()[0]
         if system_locale:
             if "ja" in system_locale.lower():
                 return "ja"
-        
+
         # デフォルトは英語
         return "en"
     except Exception:
@@ -206,12 +201,12 @@ def detect_language() -> str:
 def get_language() -> str:
     """
     現在の言語設定を取得
-    
+
     Returns:
         str: 現在の言語コード
     """
     global _current_language
-    
+
     if _current_language == Language.AUTO:
         return detect_language()
     else:
@@ -221,11 +216,11 @@ def get_language() -> str:
 def set_language(lang: Union[str, Language], save_to_ssm: bool = True) -> None:
     """
     言語を設定
-    
+
     Args:
         lang: 言語コード ('ja', 'en', 'auto') または Language 列挙型
         save_to_ssm: SSMが初期化されている場合、設定ファイルに保存するか（デフォルト: True）
-        
+
     Example:
         >>> from SessionSmith import set_language
         >>> set_language('ja')  # 日本語に設定
@@ -233,7 +228,7 @@ def set_language(lang: Union[str, Language], save_to_ssm: bool = True) -> None:
         >>> set_language('auto')  # 自動検出
     """
     global _current_language
-    
+
     if isinstance(lang, str):
         if lang.lower() == "auto":
             _current_language = Language.AUTO
@@ -247,7 +242,7 @@ def set_language(lang: Union[str, Language], save_to_ssm: bool = True) -> None:
         _current_language = lang
     else:
         raise TypeError(f"lang must be str or Language, got {type(lang).__name__}")
-    
+
     # SSMが初期化されている場合は設定ファイルにも保存
     if save_to_ssm:
         try:
@@ -264,20 +259,20 @@ def set_language(lang: Union[str, Language], save_to_ssm: bool = True) -> None:
 def translate(key: str, **kwargs: Any) -> str:
     """
     翻訳キーからメッセージを取得し、パラメータを置換
-    
+
     Args:
         key: 翻訳キー（例: "error.ssm_not_initialized"）
         **kwargs: メッセージ内のプレースホルダーを置換するパラメータ
-        
+
     Returns:
         str: 翻訳されたメッセージ
-        
+
     Raises:
         KeyError: 翻訳キーが見つからない場合
     """
     lang = get_language()
     translations = _TRANSLATIONS.get(lang, _TRANSLATIONS["en"])
-    
+
     if key not in translations:
         # フォールバック: 英語版を試す
         if lang != "en" and key in _TRANSLATIONS["en"]:
@@ -285,26 +280,26 @@ def translate(key: str, **kwargs: Any) -> str:
         else:
             # キーが見つからない場合はキーをそのまま返す
             return key
-    
+
     template = translations.get(key, _TRANSLATIONS["en"].get(key, key))
-    
+
     try:
         return template.format(**kwargs)
     except KeyError as e:
         # パラメータが不足している場合は警告を出してテンプレートを返す
         import warnings
-        warnings.warn(f"Missing parameter for translation key '{key}': {e}")
+        warnings.warn(f"Missing parameter for translation key '{key}': {e}", stacklevel=2)
         return template
 
 
 def t(key: str, **kwargs: Any) -> str:
     """
     translate() の短縮形
-    
+
     Args:
         key: 翻訳キー
         **kwargs: パラメータ
-        
+
     Returns:
         str: 翻訳されたメッセージ
     """
