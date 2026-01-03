@@ -2,46 +2,44 @@
 セッション情報表示機能
 """
 
-import pickle
-import gzip
-import bz2
 import os
-from typing import Dict, Any, List, Optional, Union
+import pickle
 from datetime import datetime
 from pathlib import Path
+from typing import Any, Optional, Union
 
 
-def _load_session_file(file_path: Union[str, Path], format: Optional[str] = None) -> tuple[Dict[str, Any], Optional[str]]:
+def _load_session_file(file_path: Union[str, Path], format: Optional[str] = None) -> tuple[dict[str, Any], Optional[str]]:
     """
     セッションファイルを読み込みます（圧縮形式を自動検出）
-    
+
     Args:
         file_path: セッションファイルのパス
-        
+
     Returns:
         tuple: (セッションデータ, 圧縮形式)
-        
+
     Raises:
         FileNotFoundError: ファイルが存在しない場合
         IOError: ファイルの読み込みに失敗した場合
     """
     file_path = Path(file_path)
-    
+
     if not file_path.exists():
         raise FileNotFoundError(f"Session file '{file_path}' not found.")
-    
+
     if not file_path.is_file():
         raise ValueError(f"'{file_path}' is not a file.")
-    
+
     compression: Optional[str] = None
-    from .formats import detect_format, load_pickle, load_json, load_msgpack, load_hdf5
-    
-    session: Dict[str, Any] = {}
+    from .formats import detect_format, load_hdf5, load_json, load_msgpack, load_pickle
+
+    session: dict[str, Any] = {}
     compression: Optional[str] = None
-    
+
     try:
         detected_format = detect_format(file_path, format)
-        
+
         if detected_format == "pickle":
             session = load_pickle(file_path)
         elif detected_format == "json":
@@ -53,15 +51,15 @@ def _load_session_file(file_path: Union[str, Path], format: Optional[str] = None
         else:
             raise ValueError(f"Unsupported format: {detected_format}")
     except Exception as e:
-        raise IOError(f"Failed to load session from {file_path}: {str(e)}") from e
-    
+        raise OSError(f"Failed to load session from {file_path}: {str(e)}") from e
+
     if not isinstance(session, dict):
         raise ValueError(f"Session file '{file_path}' does not contain a dictionary")
-    
+
     return session, compression
 
 
-def get_session_info(file_path: Union[str, Path]) -> Dict[str, Any]:
+def get_session_info(file_path: Union[str, Path]) -> dict[str, Any]:
     """
     セッションファイルの詳細情報を取得します
 
@@ -70,7 +68,7 @@ def get_session_info(file_path: Union[str, Path]) -> Dict[str, Any]:
 
     Returns:
         dict: セッション情報（変数名、型、サイズなど）
-        
+
     Raises:
         FileNotFoundError: ファイルが存在しない場合
         IOError: ファイルの読み込みに失敗した場合
@@ -82,13 +80,13 @@ def get_session_info(file_path: Union[str, Path]) -> Dict[str, Any]:
     metadata = session.pop("__metadata__", None)
 
     # 変数情報を収集
-    variables: List[Dict[str, Any]] = []
+    variables: list[dict[str, Any]] = []
     total_size = 0
 
     for var_name, var_value in session.items():
         var_type = type(var_value).__name__
         var_size: Optional[int] = None
-        
+
         try:
             var_size = len(pickle.dumps(var_value))
             total_size += var_size
@@ -107,9 +105,9 @@ def get_session_info(file_path: Union[str, Path]) -> Dict[str, Any]:
         file_size = os.path.getsize(str(file_path))
         file_mtime = datetime.fromtimestamp(os.path.getmtime(str(file_path)))
     except OSError as e:
-        raise IOError(f"Failed to get file information: {str(e)}") from e
+        raise OSError(f"Failed to get file information: {str(e)}") from e
 
-    info: Dict[str, Any] = {
+    info: dict[str, Any] = {
         "file_path": str(file_path),
         "file_size": file_size,
         "compression": compression,
@@ -123,7 +121,7 @@ def get_session_info(file_path: Union[str, Path]) -> Dict[str, Any]:
     return info
 
 
-def list_session_variables(file_path: Union[str, Path]) -> List[str]:
+def list_session_variables(file_path: Union[str, Path]) -> list[str]:
     """
     セッションファイルに含まれる変数名のリストを取得します
 
@@ -132,7 +130,7 @@ def list_session_variables(file_path: Union[str, Path]) -> List[str]:
 
     Returns:
         list: 変数名のリスト
-        
+
     Raises:
         FileNotFoundError: ファイルが存在しない場合
         IOError: ファイルの読み込みに失敗した場合
@@ -147,7 +145,7 @@ def print_session_info(file_path: Union[str, Path]) -> None:
 
     Args:
         file_path: セッションファイルのパス
-        
+
     Raises:
         FileNotFoundError: ファイルが存在しない場合
         IOError: ファイルの読み込みに失敗した場合
@@ -167,11 +165,11 @@ def print_session_info(file_path: Union[str, Path]) -> None:
     print(f"Total Data Size: {info['total_data_size']:,} bytes")
 
     if info['metadata']:
-        print(f"\nMetadata:")
+        print("\nMetadata:")
         for k, v in info['metadata'].items():
             print(f"  {k}: {v}")
 
-    print(f"\nVariables:")
+    print("\nVariables:")
     for var in info['variables']:
         size_str = f"{var['size']:,} bytes" if var['size'] is not None else "unknown size"
         print(f"  {var['name']:20s} ({var['type']:15s}) - {size_str}")

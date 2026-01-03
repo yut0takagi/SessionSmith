@@ -3,13 +3,12 @@ Jupyter Notebook関連のユーティリティ関数
 """
 
 import re
-from typing import List
 
 
 def is_jupyter_environment() -> bool:
     """
     Jupyter Notebook/IPython環境で実行されているかどうかを判定します
-    
+
     Returns:
         bool: Jupyter環境の場合はTrue
     """
@@ -20,10 +19,10 @@ def is_jupyter_environment() -> bool:
         return False
 
 
-def get_jupyter_exclude_list() -> List[str]:
+def get_jupyter_exclude_list() -> list[str]:
     """
     Jupyter Notebookの内部変数のリストを取得します
-    
+
     Returns:
         list: 除外すべき変数名のリスト
     """
@@ -40,24 +39,24 @@ def get_jupyter_exclude_list() -> List[str]:
 def is_jupyter_internal_var(var_name: str) -> bool:
     """
     変数名がJupyter Notebookの内部変数かどうかを判定します
-    
+
     Args:
         var_name: 変数名
-        
+
     Returns:
         bool: 内部変数の場合はTrue
     """
     if not isinstance(var_name, str):
         return False
-    
+
     # 基本的な内部変数
     jupyter_vars = get_jupyter_exclude_list()
     if var_name in jupyter_vars:
         return True
-    
+
     # セル番号付きの入力履歴（_i1, _i2, _i3, ...）
     if re.match(r'^_i\d+$', var_name):
         return True
-    
+
     return False
 

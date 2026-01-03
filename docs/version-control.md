@@ -1,172 +1,117 @@
 # バージョン管理機能
 
-SessionSmithのバージョン管理機能は、Git風の操作でセッションの履歴を管理できます。
-
-## 概要
-
-`SessionManager`にバージョン管理機能が統合されています。通常の保存機能とGit風のバージョン管理を両方使用できます。
+ブランチ、マージ、タグ、リモート機能を使った実践的な使用例です。
 
 ## 基本的な使い方
 
-### バージョン管理を有効化
+```python
+from SessionSmith import ssm
+
+ssm.init()
+
+# ブランチ作成
+ssm.branch('feature', create=True)
+ssm.checkout_branch('feature')
+
+# マージ
+ssm.merge('feature')
+
+# タグ
+ssm.tag('v1.0.0')
+ssm.checkout_tag('v1.0.0')
+
+# リモート
+ssm.remote_add('origin', '/path/to/remote')
+ssm.push('origin', 'main')
+ssm.pull('origin', 'main')
+```
+
+## 実践例: 機械学習実験の管理
+
+### 1. 初期セットアップ
 
 ```python
-from SessionSmith import SessionManager
+from SessionSmith import ssm
 
-# バージョン管理を有効化してマネージャーを作成
-manager = SessionManager(enable_version_control=True)
-
-# または後から有効化
-manager = SessionManager()
-manager.enable_version_control()
+ssm.init()
+X, y = load_data()
+ssm.commit("Initial data preparation")
 ```
 
-### 保存とコミット
+### 2. ブランチで実験
 
 ```python
-# 保存時に自動的にコミット（デフォルト）
-manager.save("session.pkl", commit_message="Initial state")
+# 実験用ブランチを作成
+ssm.branch('experiment-dropout', create=True)
+ssm.checkout_branch('experiment-dropout')
 
-# コミットしないで保存（長期中断用）
-manager.save("session.pkl", auto_commit=False)
+# 実験を実行
+model1 = create_model_with_dropout()
+history1 = train(model1)
+ssm.commit("Experiment: Add dropout layer")
 
-# 明示的にコミット
-manager.commit("After training", tags=["ml", "v1"])
+# 別の実験
+ssm.checkout_branch('main')
+ssm.branch('experiment-batch-norm', create=True)
+ssm.checkout_branch('experiment-batch-norm')
+
+model2 = create_model_with_batch_norm()
+history2 = train(model2)
+ssm.commit("Experiment: Add batch normalization")
 ```
 
-### コミット履歴の確認
+### 3. マージ
 
 ```python
-# 全履歴を表示
-manager.log()
-
-# 最新10件のみ表示
-manager.log(limit=10)
-
-# 1行形式で表示
-manager.log(oneline=True)
+# 最良の実験をマージ
+ssm.checkout_branch('main')
+ssm.merge('experiment-batch-norm')
 ```
 
-### 以前の状態に戻す
+### 4. タグ付け
 
 ```python
-# コミットハッシュで戻す
-manager.checkout(commit_hash="abc123def456")
-
-# コミットメッセージで検索して戻す
-manager.checkout(message="Initial state")
-
-# 別のファイルに復元
-manager.checkout(message="After training", target_file="restored.pkl")
+# リリース時にタグ
+ssm.tag('v1.0.0', message="First release")
+ssm.checkout_tag('v1.0.0')  # 後で復元可能
 ```
 
-### コミット間の差分を確認
+### 5. リモート同期
 
 ```python
-# 2つのコミット間の差分
-diff = manager.diff(commit1="abc123", commit2="def456", detailed=True)
+# リモート追加
+ssm.remote_add('origin', '/shared/experiments/ml-project')
 
-# HEADと前のコミットの差分
-diff = manager.diff(commit1=None, commit2="abc123")
+# プッシュ
+ssm.push('origin', 'main')
+
+# 別のマシンでプル
+ssm.pull('origin', 'main')
 ```
 
-### 現在の状態を確認
+## CLI での操作
 
-```python
-status = manager.status()
-print(status)
-# {
-#   "version_control": True,
-#   "total_commits": 5,
-#   "current_commit": "def456",
-#   "head": "def456",
-#   "latest_commit": {...}
-# }
+```bash
+# ブランチ
+ssm branch                    # 一覧
+ssm branch feature -c         # 作成
+ssm checkout-branch feature   # 切り替え
+
+# マージ
+ssm merge feature
+
+# タグ
+ssm tag v1.0.0               # 作成
+ssm tag --list               # 一覧
+ssm checkout-tag v1.0.0      # チェックアウト
+
+# リモート
+ssm remote --add origin /path/to/remote
+ssm push origin main
+ssm pull origin main
 ```
 
-### タグの追加
+## 関連ドキュメント
 
-```python
-# コミットにタグを追加
-manager.tag("production", commit_hash="def456")
-
-# HEADにタグを追加
-manager.tag("v1.0")
-```
-
-### コミットの詳細情報
-
-```python
-# コミットの詳細情報を取得
-commit_info = manager.show(commit_hash="abc123")
-print(commit_info)
-```
-
-## 使用シナリオ
-
-### 実験の管理
-
-```python
-manager = SessionManager(enable_version_control=True)
-
-# 実験の各ステップをコミット
-manager.save("experiment.pkl", commit_message="Initial data")
-manager.save("experiment.pkl", commit_message="After preprocessing")
-manager.save("experiment.pkl", commit_message="After training", tags=["ml"])
-
-# 履歴を確認
-manager.log()
-
-# 前のステップに戻る
-manager.checkout(message="After preprocessing")
-```
-
-### 長期中断時の保存
-
-```python
-# バージョン管理中でも、通常の保存が可能
-manager.save("session.pkl", auto_commit=False)  # コミットしない
-
-# 後でコミット
-manager.commit("Before long break", file_path="session.pkl")
-```
-
-### バージョン管理なしでの使用
-
-```python
-# バージョン管理なしでも通常の保存は可能
-manager = SessionManager()  # バージョン管理なし
-manager.save("session.pkl")  # 通常の保存のみ
-
-# 後からバージョン管理を有効化
-manager.enable_version_control()
-manager.save("session.pkl", commit_message="First commit")
-```
-
-## バージョン管理の無効化
-
-```python
-# バージョン管理を無効化
-manager.disable_version_control()
-
-# これ以降は通常の保存のみ
-manager.save("session.pkl")  # コミットされない
-```
-
-## 内部構造
-
-バージョン管理情報は`.sessionvc/`ディレクトリに保存されます：
-
-```
-project/
-├── session.pkl
-└── .sessionvc/
-    ├── metadata.json      # コミット履歴
-    └── commits/
-        ├── abc123.pkl     # コミット1
-        ├── def456.pkl     # コミット2
-        └── ...
-```
-
-`.sessionvc/`ディレクトリは通常の`.gitignore`に追加することをお勧めします。
-
+- [SSM ガイド](ssm-guide.md) - 基本機能
+- [API リファレンス](api-reference.md) - 詳細なAPI

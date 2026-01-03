@@ -2,22 +2,22 @@
 配列変数の可視化機能（バブルソート、ヒープソートなど）
 """
 
-from typing import List, Dict, Any, Optional, Union
-from pathlib import Path
 import warnings
+from pathlib import Path
+from typing import Any, Optional, Union
 
 try:
-    import matplotlib.pyplot as plt
     import matplotlib.animation as anim_module
+    import matplotlib.pyplot as plt
     MATPLOTLIB_AVAILABLE = True
 except ImportError:
     MATPLOTLIB_AVAILABLE = False
-    warnings.warn("matplotlib is not installed. Visualization features will be limited.")
+    warnings.warn("matplotlib is not installed. Visualization features will be limited.", stacklevel=2)
 
 
 def visualize_arrays(
-    trace_data: List[Dict[str, Any]],
-    array_vars: List[str],
+    trace_data: list[dict[str, Any]],
+    array_vars: list[str],
     output_file: Optional[Union[str, Path]],
     animation: bool,
     interval: int,
@@ -30,23 +30,23 @@ def visualize_arrays(
             "matplotlib is required for visualization. "
             "Install it with: pip install matplotlib"
         )
-    
+
     try:
         fig, axes = plt.subplots(len(array_vars), 1, figsize=(12, 4 * len(array_vars)))
         if len(array_vars) == 1:
             axes = [axes]
     except Exception as e:
         raise RuntimeError(f"Failed to create figure: {str(e)}") from e
-    
-    def get_array_value(step: Dict[str, Any], var_name: str) -> Optional[List[Union[int, float]]]:
+
+    def get_array_value(step: dict[str, Any], var_name: str) -> Optional[list[Union[int, float]]]:
         """ステップから配列の値を取得"""
         if not isinstance(step, dict):
             return None
-        
+
         var_data = step.get("variables", {}).get(var_name)
         if var_data is None:
             return None
-        
+
         # 直接リストの場合（tracer.pyでmax_array_size以下のリストは直接返される）
         if isinstance(var_data, list):
             # 空でないリストを返す（要素が数値かどうかは問わない）
@@ -57,7 +57,7 @@ def visualize_arrays(
                 # ネストされたリストや混合型の場合も、数値のみを抽出して返す
                 try:
                     # 数値に変換可能な要素のみを抽出
-                    numeric_data: List[Union[int, float]] = []
+                    numeric_data: list[Union[int, float]] = []
                     for x in var_data:
                         if isinstance(x, (int, float)):
                             numeric_data.append(x)
@@ -73,7 +73,7 @@ def visualize_arrays(
                     # エラーが発生した場合でも、リストとして返す
                     return var_data
             return None
-        
+
         # 辞書形式の場合（シリアライズされたデータ）
         if isinstance(var_data, dict):
             # ndarray型
@@ -92,27 +92,27 @@ def visualize_arrays(
                 sample = var_data.get("sample")
                 if sample is not None and isinstance(sample, list) and len(sample) > 0:
                     return sample
-        
+
         return None
-    
+
     def animate(frame: int) -> None:
         """アニメーションフレーム"""
         if frame >= len(trace_data):
             return
-        
+
         step = trace_data[frame]
         if not isinstance(step, dict):
             return
-        
+
         line_num = step.get("line_number", 0)
-        
+
         for idx, var_name in enumerate(array_vars):
             ax = axes[idx]
             ax.clear()
-            
+
             # 現在のステップから配列を取得
             arr = get_array_value(step, var_name)
-            
+
             # 現在のステップにデータがない場合、前のステップから取得を試みる
             if arr is None and frame > 0:
                 for prev_frame in range(frame - 1, -1, -1):
@@ -120,11 +120,11 @@ def visualize_arrays(
                     if prev_arr is not None and len(prev_arr) > 0:
                         arr = prev_arr
                         break
-            
+
             if arr is not None and len(arr) > 0:
                 # バーグラフで表示
                 try:
-                    bars = ax.bar(range(len(arr)), arr, color='skyblue', edgecolor='black')
+                    ax.bar(range(len(arr)), arr, color='skyblue', edgecolor='black')
                     ax.set_title(f"{var_name} (Line {line_num})", fontsize=12)
                     ax.set_xlabel("Index", fontsize=10)
                     ax.set_ylabel("Value", fontsize=10)
@@ -136,7 +136,7 @@ def visualize_arrays(
                     error_msg = f"{var_name}: Error\n{str(e)}"
                     if debug:
                         error_msg += f"\nArray length: {len(arr) if arr else 0}"
-                    ax.text(0.5, 0.5, error_msg, 
+                    ax.text(0.5, 0.5, error_msg,
                            ha='center', va='center', transform=ax.transAxes,
                            fontsize=10)
                     ax.set_title(f"{var_name} (Line {line_num})", fontsize=12)
@@ -156,25 +156,25 @@ def visualize_arrays(
                         if 'sample' in var_data:
                             debug_msg += f"\nSample type: {type(var_data['sample']).__name__}"
                 elif debug:
-                    debug_msg += f"\nVariable not found in step"
-                
-                ax.text(0.5, 0.5, debug_msg, 
+                    debug_msg += "\nVariable not found in step"
+
+                ax.text(0.5, 0.5, debug_msg,
                        ha='center', va='center', transform=ax.transAxes,
                        fontsize=9)
                 ax.set_title(f"{var_name} (Line {line_num})", fontsize=12)
-        
+
         plt.tight_layout()
-    
+
     if animation:
         try:
             anim = anim_module.FuncAnimation(
-                fig, animate, frames=len(trace_data), 
+                fig, animate, frames=len(trace_data),
                 interval=interval, repeat=True, blit=False
             )
             if output_file:
                 output_file = Path(output_file)
                 output_file.parent.mkdir(parents=True, exist_ok=True)
-                
+
                 if output_file.suffix == '.gif':
                     try:
                         anim.save(str(output_file), writer='pillow', fps=1000/interval)
@@ -189,7 +189,7 @@ def visualize_arrays(
                                 f.write(html)
                             print(f"Animation saved to {html_file}")
                         except Exception as e2:
-                            raise IOError(f"Failed to save animation: {str(e2)}") from e2
+                            raise OSError(f"Failed to save animation: {str(e2)}") from e2
                 elif output_file.suffix == '.html':
                     try:
                         html = anim.to_jshtml()
@@ -197,9 +197,9 @@ def visualize_arrays(
                             f.write(html)
                         print(f"Animation saved to {output_file}")
                     except Exception as e:
-                        raise IOError(f"Failed to save HTML: {str(e)}") from e
+                        raise OSError(f"Failed to save HTML: {str(e)}") from e
                 else:
-                    warnings.warn(f"Unknown file extension: {output_file.suffix}. Saving as HTML.")
+                    warnings.warn(f"Unknown file extension: {output_file.suffix}. Saving as HTML.", stacklevel=2)
                     html_file = output_file.with_suffix('.html')
                     html = anim.to_jshtml()
                     with open(str(html_file), 'w') as f:
