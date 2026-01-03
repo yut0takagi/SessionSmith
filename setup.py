@@ -1,7 +1,9 @@
 # setup.py
-from setuptools import setup, find_packages
 import os
 import re
+
+from setuptools import find_packages, setup
+
 
 def read_readme():
     """READMEファイルを読み込む（エラーハンドリング付き）"""
@@ -22,7 +24,7 @@ def get_version():
     init_path = os.path.join('SessionSmith', '__init__.py')
     if os.path.exists(init_path):
         try:
-            with open(init_path, 'r', encoding='utf-8') as f:
+            with open(init_path, encoding='utf-8') as f:
                 content = f.read()
                 match = re.search(r'__version__\s*=\s*["\']([^"\']+)["\']', content)
                 if match:

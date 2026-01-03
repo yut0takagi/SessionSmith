@@ -124,6 +124,7 @@ select = [
 ]
 ignore = [
     "E501",  # line too long (handled by black)
+    "E402",  # module level import not at top of file (Jupyter notebooks allow this)
     "B008",  # do not perform function calls in argument defaults
     "B904",  # raise from err (意図的に使用)
     "F401",  # 未使用インポート（オプショナル依存のため）

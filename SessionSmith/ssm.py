@@ -163,6 +163,20 @@ class CheckpointContext:
             # まだ生きている場合は警告を出す（テスト環境では問題ない）
             if self._thread.is_alive():
                 logger.warning("Checkpoint thread did not stop in time")
+                # スレッドが終了しない場合、ロックを取得しようとしてもデッドロックする可能性がある
+                # そのため、ロックを取得せずに直接保存を試みる（安全ではないが、終了処理なので許容）
+                try:
+                    self._save_checkpoint_unsafe("Final checkpoint (thread timeout)")
+                except Exception as e:
+                    logger.warning(f"Failed to save final checkpoint: {e}")
+            else:
+                # スレッドが正常に終了した場合、ロックを取得してから保存
+                with self._lock:
+                    self._save_checkpoint_unsafe("Final checkpoint")
+        else:
+            # スレッドが存在しないか、既に終了している場合
+            with self._lock:
+                self._save_checkpoint_unsafe("Final checkpoint")
 
         self._restore_signal_handlers()
 
@@ -170,9 +184,6 @@ class CheckpointContext:
             atexit.unregister(self._on_exit)
         except Exception:
             pass
-
-        # 最終チェックポイントを保存
-        self._save_checkpoint("Final checkpoint")
 
         print(f"✓ Checkpoint stopped (elapsed: {self.elapsed_str})")
         logger.info("Checkpoint stopped")
@@ -223,54 +234,59 @@ class CheckpointContext:
 
                 elapsed = time.time() - self._last_checkpoint
                 if elapsed >= self.interval:
-                    self._save_checkpoint(f"Auto {self.message}")
+                    # ロックを保持しているので、_save_checkpoint_unsafe()を呼ぶ
+                    self._save_checkpoint_unsafe(f"Auto {self.message}")
+
+    def _save_checkpoint_unsafe(self, message: str = "") -> bool:
+        """チェックポイントを保存（ロックなし、内部実装）"""
+        try:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"checkpoint_{timestamp}.gz"
+            filepath = self.checkpoint_dir / filename
+
+            # グローバル変数を取得
+            globals_dict = self.ssm._get_globals_dict(depth=5)
+            variables = self.ssm._get_saveable_vars(globals_dict, verbose=False)
+
+            if not variables:
+                return False
+
+            # チェックポイントデータ
+            checkpoint_data = {
+                "timestamp": datetime.now().isoformat(),
+                "message": message,
+                "step_count": self._step_count,
+                "checkpoint_count": self._checkpoint_count,
+                "elapsed": self.elapsed,
+                "metrics": self._get_metrics_summary(),
+                "variables": variables,
+            }
+
+            # 保存
+            with gzip.open(filepath, 'wb') as f:
+                pickle.dump(checkpoint_data, f)
+
+            self._checkpoint_count += 1
+            self._last_checkpoint = time.time()
+
+            # 古いチェックポイントを削除
+            self._cleanup_old_checkpoints()
+
+            logger.info(f"Checkpoint saved: {filepath}")
+            return True
+
+        except Exception as e:
+            if self.on_error == "raise":
+                raise
+            elif self.on_error == "warn":
+                warnings.warn(f"Checkpoint failed: {e}", stacklevel=2)
+            logger.error(f"Checkpoint failed: {e}")
+            return False
 
     def _save_checkpoint(self, message: str = "") -> bool:
-        """チェックポイントを保存"""
+        """チェックポイントを保存（ロックあり、外部API）"""
         with self._lock:
-            try:
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                filename = f"checkpoint_{timestamp}.gz"
-                filepath = self.checkpoint_dir / filename
-
-                # グローバル変数を取得
-                globals_dict = self.ssm._get_globals_dict(depth=5)
-                variables = self.ssm._get_saveable_vars(globals_dict, verbose=False)
-
-                if not variables:
-                    return False
-
-                # チェックポイントデータ
-                checkpoint_data = {
-                    "timestamp": datetime.now().isoformat(),
-                    "message": message,
-                    "step_count": self._step_count,
-                    "checkpoint_count": self._checkpoint_count,
-                    "elapsed": self.elapsed,
-                    "metrics": self._get_metrics_summary(),
-                    "variables": variables,
-                }
-
-                # 保存
-                with gzip.open(filepath, 'wb') as f:
-                    pickle.dump(checkpoint_data, f)
-
-                self._checkpoint_count += 1
-                self._last_checkpoint = time.time()
-
-                # 古いチェックポイントを削除
-                self._cleanup_old_checkpoints()
-
-                logger.info(f"Checkpoint saved: {filepath}")
-                return True
-
-            except Exception as e:
-                if self.on_error == "raise":
-                    raise
-                elif self.on_error == "warn":
-                    warnings.warn(f"Checkpoint failed: {e}", stacklevel=2)
-                logger.error(f"Checkpoint failed: {e}")
-                return False
+            return self._save_checkpoint_unsafe(message)
 
     def _cleanup_old_checkpoints(self) -> None:
         """古いチェックポイントを削除"""
@@ -325,7 +341,23 @@ class CheckpointContext:
         """シグナルハンドラー"""
         import signal
         logger.info(f"Signal {signum} received, saving checkpoint...")
-        self._save_checkpoint(f"Emergency (signal {signum})")
+        # シグナルハンドラーから呼ばれるので、ロックを取得してから保存
+        # ただし、ロックが取得できない場合はタイムアウトを設定
+        try:
+            # ロックを取得しようとする（タイムアウトなし、ブロックする）
+            # シグナルハンドラーなので、できるだけ早く処理する必要がある
+            if self._lock.acquire(blocking=False):
+                try:
+                    self._save_checkpoint_unsafe(f"Emergency (signal {signum})")
+                finally:
+                    self._lock.release()
+            else:
+                # ロックが取得できない場合（バックグラウンドスレッドが保持している）
+                # ロックなしで保存を試みる（安全ではないが、緊急時なので許容）
+                logger.warning("Lock not available, saving checkpoint without lock")
+                self._save_checkpoint_unsafe(f"Emergency (signal {signum})")
+        except Exception as e:
+            logger.error(f"Failed to save checkpoint in signal handler: {e}")
 
         # 元のハンドラーを呼び出し
         if signum == signal.SIGINT and self._original_sigint:
@@ -337,7 +369,21 @@ class CheckpointContext:
         """終了時のクリーンアップ"""
         if self._running:
             logger.info("Saving final checkpoint on exit...")
-            self._save_checkpoint("Final (exit)")
+            # atexitから呼ばれるので、ロックを取得してから保存
+            # ただし、ロックが取得できない場合はタイムアウトを設定
+            try:
+                if self._lock.acquire(blocking=False):
+                    try:
+                        self._save_checkpoint_unsafe("Final (exit)")
+                    finally:
+                        self._lock.release()
+                else:
+                    # ロックが取得できない場合（バックグラウンドスレッドが保持している）
+                    # ロックなしで保存を試みる（安全ではないが、終了処理なので許容）
+                    logger.warning("Lock not available, saving checkpoint without lock")
+                    self._save_checkpoint_unsafe("Final (exit)")
+            except Exception as e:
+                logger.error(f"Failed to save checkpoint on exit: {e}")
 
     def summary(self) -> dict[str, Any]:
         """進捗サマリーを取得"""
