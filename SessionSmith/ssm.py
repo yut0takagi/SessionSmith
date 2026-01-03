@@ -157,7 +157,12 @@ class CheckpointContext:
         self._running = False
 
         if self._thread and self._thread.is_alive():
-            self._thread.join(timeout=2.0)
+            # タイムアウトを長くする（最大3秒）
+            self._thread.join(timeout=3.0)
+            
+            # まだ生きている場合は警告を出す（テスト環境では問題ない）
+            if self._thread.is_alive():
+                logger.warning("Checkpoint thread did not stop in time")
 
         self._restore_signal_handlers()
 
@@ -206,7 +211,11 @@ class CheckpointContext:
     def _checkpoint_loop(self) -> None:
         """バックグラウンドチェックポイントループ"""
         while self._running:
-            time.sleep(1)  # 1秒ごとにチェック
+            # 0.1秒ごとにチェックして、より早く終了できるようにする
+            for _ in range(10):  # 1秒を10回に分割
+                if not self._running:
+                    return
+                time.sleep(0.1)
 
             with self._lock:
                 if not self._running:

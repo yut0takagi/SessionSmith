@@ -551,7 +551,7 @@ class TestSSMCheckpoint:
         ssm = SSM(path=tmp_path, globals_dict={"x": 1})
         ssm.init()
         
-        with ssm.checkpoint(interval=10) as cp:
+        with ssm.checkpoint(interval=1) as cp:  # 10秒 → 1秒に変更
             time.sleep(0.5)
             assert cp.elapsed >= 0.4
             assert "0:00" in cp.elapsed_str
@@ -561,7 +561,7 @@ class TestSSMCheckpoint:
         ssm = SSM(path=tmp_path, globals_dict={"x": 1})
         ssm.init()
         
-        with ssm.checkpoint(interval=10) as cp:
+        with ssm.checkpoint(interval=1) as cp:  # 10秒 → 1秒に変更
             cp.step(loss=0.5)
             cp.step(loss=0.4)
             cp.step(force=True, loss=0.3)
