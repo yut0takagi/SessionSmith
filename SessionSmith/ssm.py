@@ -159,7 +159,7 @@ class CheckpointContext:
         if self._thread and self._thread.is_alive():
             # タイムアウトを長くする（最大3秒）
             self._thread.join(timeout=3.0)
-            
+
             # まだ生きている場合は警告を出す（テスト環境では問題ない）
             if self._thread.is_alive():
                 logger.warning("Checkpoint thread did not stop in time")
