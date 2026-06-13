@@ -1061,6 +1061,14 @@ class SSM:
             "caller": caller_info,  # 呼び出し元の情報を追加
         }
 
+        # 署名鍵が設定されていれば HMAC 署名を付与（改ざん検出）
+        sign_key = self._get_sign_key()
+        if sign_key:
+            from . import crypto
+
+            payload = self._signing_payload(var_hashes)
+            commit_data["signature"] = crypto.sign_data(payload, sign_key)
+
         # コミットを保存
         commit_bytes = json.dumps(commit_data, indent=2).encode('utf-8')
         commit_hash = self._hash_object(commit_bytes)
@@ -1597,6 +1605,8 @@ class SSM:
         commit_hash: Optional[str] = None,
         format: Optional[str] = None,
         compress: Union[bool, str] = False,
+        *,
+        password: Optional[str] = None,
     ) -> Path:
         """
         コミットを従来形式（.pkl, .json など）でエクスポート
@@ -1606,6 +1616,7 @@ class SSM:
             commit_hash: エクスポートするコミット（Noneの場合はHEAD）
             format: 出力形式（None の場合は拡張子から自動検出）
             compress: 圧縮形式（True, 'gzip', 'bz2', または False）
+            password: 設定すると出力ファイルを暗号化（要 cryptography パッケージ）
 
         Returns:
             Path: 出力されたファイルのパス
@@ -1613,6 +1624,7 @@ class SSM:
         Example:
             >>> ssm.export("backup.pkl")  # HEADをpickleでエクスポート
             >>> ssm.export("data.json", commit_hash="abc123", format="json")
+            >>> ssm.export("secret.pkl", password="my-pass")  # 暗号化して出力
         """
         from .core import save_session
         from .formats import detect_format
@@ -1659,10 +1671,19 @@ class SSM:
             use_ssm=False,  # 循環参照を避けるため
         )
 
+        # 暗号化（指定された場合）
+        if password:
+            from . import crypto
+
+            plaintext = output_path.read_bytes()
+            output_path.write_bytes(crypto.encrypt_data(plaintext, password))
+            logger.info(f"Encrypted export at {output_path}")
+
         logger.info(f"Exported {len(variables)} variables to {output_path}")
         info_msg = i18n.translate("info.session_saved", file_path=output_path, size=0, format=format)
         print(f"✓ {info_msg}")
-        print(f"  Format: {format}, Commit: {full_hash[:7]}")
+        encrypted_note = " (encrypted)" if password else ""
+        print(f"  Format: {format}, Commit: {full_hash[:7]}{encrypted_note}")
 
         return output_path
 
@@ -1671,6 +1692,8 @@ class SSM:
         input_path: Union[str, Path],
         message: Optional[str] = None,
         format: Optional[str] = None,
+        *,
+        password: Optional[str] = None,
     ) -> str:
         """
         従来形式（.pkl, .json など）からインポートしてコミット
@@ -1679,6 +1702,7 @@ class SSM:
             input_path: 入力ファイルパス
             message: コミットメッセージ（Noneの場合は自動生成）
             format: 入力形式（None の場合は拡張子から自動検出）
+            password: ファイルが暗号化されている場合の復号パスワード
 
         Returns:
             str: 作成されたコミットのハッシュ
@@ -1686,6 +1710,7 @@ class SSM:
         Example:
             >>> ssm.import_session("old_session.pkl")
             >>> ssm.import_session("data.json", message="Import from JSON")
+            >>> ssm.import_session("secret.pkl", password="my-pass")
         """
         from .core import load_session
         from .formats import detect_format
@@ -1697,18 +1722,40 @@ class SSM:
         if not input_path.exists():
             raise FileNotFoundError(f"File not found: {input_path}")
 
-        # 形式を検出
-        if format is None:
-            format = detect_format(input_path)
+        # 暗号化されている場合は復号して一時ファイルへ
+        temp_decrypted: Optional[Path] = None
+        read_path = input_path
+        from . import crypto
 
-        # 一時的な辞書に読み込み
-        loaded_vars: dict[str, Any] = {}
-        load_session(
-            file_path=input_path,
-            globals_dict=loaded_vars,
-            format=format,
-            use_ssm=False,  # 循環参照を避けるため
-        )
+        if crypto.is_encrypted(input_path.read_bytes()):
+            if not password:
+                raise crypto.CryptoError(
+                    "File is encrypted but no password was provided"
+                )
+            plaintext = crypto.decrypt_data(input_path.read_bytes(), password)
+            temp_decrypted = input_path.with_suffix(input_path.suffix + ".dec.tmp")
+            temp_decrypted.write_bytes(plaintext)
+            read_path = temp_decrypted
+
+        try:
+            # 形式を検出（復号後のファイル基準。拡張子は元ファイルから）
+            if format is None:
+                format = detect_format(input_path)
+
+            # 一時的な辞書に読み込み
+            loaded_vars: dict[str, Any] = {}
+            load_session(
+                file_path=read_path,
+                globals_dict=loaded_vars,
+                format=format,
+                use_ssm=False,  # 循環参照を避けるため
+            )
+        finally:
+            if temp_decrypted is not None and temp_decrypted.exists():
+                try:
+                    temp_decrypted.unlink()
+                except Exception:
+                    pass
 
         if not loaded_vars:
             warn_msg = i18n.translate("msg.no_variables")
@@ -1851,6 +1898,104 @@ class SSM:
         self._write_json(config_path, config)
         print(f"✓ Added to exclude: {', '.join(names)}")
 
+    # ========== 署名・整合性検証 ==========
+
+    def _get_sign_key(self) -> Optional[str]:
+        """署名鍵を取得（設定 'sign_key' または環境変数 SESSIONSMITH_SIGN_KEY）"""
+        env_key = os.environ.get("SESSIONSMITH_SIGN_KEY")
+        if env_key:
+            return env_key
+        try:
+            config = self._read_json(self.ssm_path / self.CONFIG_FILE)
+            return config.get("sign_key")
+        except Exception:
+            return None
+
+    @staticmethod
+    def _signing_payload(var_hashes: dict[str, Any]) -> bytes:
+        """署名対象となる正規化バイト列を生成（変数名→ハッシュの順序非依存表現）"""
+        return json.dumps(var_hashes, sort_keys=True).encode("utf-8")
+
+    def verify(self, commit_hash: Optional[str] = None) -> dict[str, Any]:
+        """
+        コミットの整合性と署名を検証します。
+
+        - 整合性: 保存された各オブジェクトを読み込み、SHA-256 ハッシュが記録と一致するか
+        - 署名: 署名鍵が設定され、コミットに署名がある場合、HMAC 署名が正しいか
+
+        Args:
+            commit_hash: 検証するコミット（Noneの場合はHEAD）
+
+        Returns:
+            dict: {"commit", "integrity_ok", "signature_ok", "signed", "issues"}
+
+        Raises:
+            SSMNotInitializedError: SSMが初期化されていない場合
+            SSMCommitNotFoundError: コミットが見つからない場合
+        """
+        self._ensure_initialized()
+
+        if commit_hash is None:
+            head_file = self.ssm_path / self.HEAD_FILE
+            commit_hash = head_file.read_text().strip()
+            if not commit_hash:
+                raise SSMNoCommitsError()
+
+        try:
+            full_hash = self._resolve_hash(commit_hash)
+        except ValueError:
+            raise SSMCommitNotFoundError(commit_hash) from None
+        commit_path = self.ssm_path / self.COMMITS_DIR / f"{full_hash}.json"
+        if not commit_path.exists():
+            raise SSMCommitNotFoundError(commit_hash)
+
+        commit_data = self._read_json(commit_path)
+        var_hashes = commit_data.get("variables", {})
+
+        issues: list[str] = []
+
+        # 整合性チェック（オブジェクトの再ハッシュ）
+        integrity_ok = True
+        for name, info in var_hashes.items():
+            obj_hash = info.get("hash")
+            try:
+                data = self._load_object(obj_hash)
+            except FileNotFoundError:
+                integrity_ok = False
+                issues.append(f"missing object for '{name}' ({obj_hash})")
+                continue
+            recomputed = self._hash_object(data)
+            if recomputed != obj_hash:
+                integrity_ok = False
+                issues.append(
+                    f"hash mismatch for '{name}': stored={obj_hash} actual={recomputed}"
+                )
+
+        # 署名チェック
+        stored_signature = commit_data.get("signature")
+        signed = stored_signature is not None
+        signature_ok: Optional[bool] = None
+        if signed:
+            sign_key = self._get_sign_key()
+            if not sign_key:
+                signature_ok = False
+                issues.append("commit is signed but no sign_key is configured")
+            else:
+                from . import crypto
+
+                payload = self._signing_payload(var_hashes)
+                signature_ok = crypto.verify_signature(payload, stored_signature, sign_key)
+                if not signature_ok:
+                    issues.append("signature verification failed (wrong key or tampered)")
+
+        return {
+            "commit": full_hash,
+            "integrity_ok": integrity_ok,
+            "signed": signed,
+            "signature_ok": signature_ok,
+            "issues": issues,
+        }
+
     # ========== ブランチ機能 ==========
 
     def branch(self, branch_name: Optional[str] = None, create: bool = False) -> Union[str, list[str]]:
@@ -1892,7 +2037,6 @@ class SSM:
         if create:
             # 新しいブランチを作成
             if branch_file.exists():
-                i18n = _get_i18n()
                 error_msg = i18n.translate("error.branch_already_exists", branch_name=branch_name)
                 raise SSMConfigError(error_msg)
 
@@ -2148,7 +2292,6 @@ class SSM:
         # タグファイルを作成
         tag_file = self.ssm_path / self.TAGS_DIR / tag_name
         if tag_file.exists():
-            i18n = _get_i18n()
             error_msg = i18n.translate("error.tag_already_exists", tag_name=tag_name)
             raise SSMConfigError(error_msg)
 
@@ -2212,7 +2355,6 @@ class SSM:
         commit_hash = tag_data.get("commit")
 
         if not commit_hash:
-            i18n = _get_i18n()
             error_msg = i18n.translate("error.tag_no_commit", tag_name=tag_name)
             raise SSMConfigError(error_msg)
 
@@ -2244,8 +2386,7 @@ class SSM:
 
         remote_file = self.ssm_path / self.REMOTES_DIR / name
         if remote_file.exists():
-            i18n = _get_i18n()
-            error_msg = i18n.translate("error.remote_already_exists", remote_name=name)
+            error_msg = _get_i18n().translate("error.remote_already_exists", remote_name=name)
             raise SSMConfigError(error_msg)
 
         remote_data = {
@@ -2279,13 +2420,21 @@ class SSM:
 
         return remotes
 
-    def push(self, remote_name: str = "origin", branch_name: Optional[str] = None) -> None:
+    def push(
+        self,
+        remote_name: str = "origin",
+        branch_name: Optional[str] = None,
+        *,
+        password: Optional[str] = None,
+    ) -> None:
         """
         リモートリポジトリにプッシュ
 
         Args:
             remote_name: リモート名（デフォルト: 'origin'）
             branch_name: プッシュするブランチ（Noneの場合は現在のブランチ）
+            password: 設定するとオブジェクト・コミットを暗号化してアップロード
+                （要 cryptography パッケージ）
 
         Raises:
             SSMNotInitializedError: SSMが初期化されていない場合
@@ -2301,7 +2450,6 @@ class SSM:
         remote_url = remote_data.get("url")
 
         if not remote_url:
-            i18n = _get_i18n()
             error_msg = i18n.translate("error.remote_no_url", remote_name=remote_name)
             raise SSMConfigError(error_msg)
 
@@ -2337,16 +2485,27 @@ class SSM:
             info_msg = i18n.translate("info.push_completed", remote=remote_name, branch=branch_name, commit=current_commit[:7])
             print(f"✓ {info_msg}")
         else:
-            # URL形式のリモート（将来の拡張用）
-            raise NotImplementedError("URL-based remotes are not yet implemented")
+            # クラウド/HTTP など URL 形式のリモート（バックエンド経由）
+            self._push_to_backend(remote_url, branch_name, current_commit, password)
+            info_msg = i18n.translate(
+                "info.push_completed", remote=remote_name, branch=branch_name, commit=current_commit[:7]
+            )
+            print(f"✓ {info_msg}")
 
-    def pull(self, remote_name: str = "origin", branch_name: Optional[str] = None) -> None:
+    def pull(
+        self,
+        remote_name: str = "origin",
+        branch_name: Optional[str] = None,
+        *,
+        password: Optional[str] = None,
+    ) -> None:
         """
         リモートリポジトリからプル
 
         Args:
             remote_name: リモート名（デフォルト: 'origin'）
             branch_name: プルするブランチ（Noneの場合は現在のブランチ）
+            password: リモートが暗号化されている場合の復号パスワード
 
         Raises:
             SSMNotInitializedError: SSMが初期化されていない場合
@@ -2362,7 +2521,6 @@ class SSM:
         remote_url = remote_data.get("url")
 
         if not remote_url:
-            i18n = _get_i18n()
             error_msg = i18n.translate("error.remote_no_url", remote_name=remote_name)
             raise SSMConfigError(error_msg)
 
@@ -2376,7 +2534,6 @@ class SSM:
             remote_ssm_path = remote_path / self.SSM_DIR
 
             if not remote_ssm_path.exists():
-                i18n = _get_i18n()
                 error_msg = i18n.translate("error.remote_repository_not_found", remote_url=remote_url)
                 raise SSMConfigError(error_msg)
 
@@ -2406,8 +2563,23 @@ class SSM:
             info_msg = i18n.translate("info.pull_completed", remote=remote_name, branch=branch_name, commit=remote_commit[:7])
             print(f"✓ {info_msg}")
         else:
-            # URL形式のリモート（将来の拡張用）
-            raise NotImplementedError("URL-based remotes are not yet implemented")
+            # クラウド/HTTP など URL 形式のリモート（バックエンド経由）
+            remote_commit = self._pull_from_backend(remote_url, branch_name, password)
+
+            current_branch = self.get_current_branch()
+            if current_branch:
+                branch_file = self.ssm_path / self.BRANCHES_DIR / current_branch
+                branch_file.write_text(remote_commit)
+
+            head_file = self.ssm_path / self.HEAD_FILE
+            head_file.write_text(remote_commit)
+
+            self.checkout(remote_commit)
+
+            info_msg = i18n.translate(
+                "info.pull_completed", remote=remote_name, branch=branch_name, commit=remote_commit[:7]
+            )
+            print(f"✓ {info_msg}")
 
     def _copy_to_remote(self, remote_ssm_path: Path) -> None:
         """リモートにコミットとオブジェクトをコピー（簡易版）"""
@@ -2458,6 +2630,123 @@ class SSM:
                     local_obj_file.parent.mkdir(parents=True, exist_ok=True)
                     if not local_obj_file.exists():
                         shutil.copy2(obj_file, local_obj_file)
+
+    # ========== クラウド/HTTP リモート（バックエンド経由） ==========
+
+    # 暗号化対象とするサブディレクトリ（変数データ・コミットメタデータ）
+    _ENCRYPTED_SUBDIRS = ("objects/", "commits/", "tags/")
+
+    def _push_to_backend(
+        self,
+        remote_url: str,
+        branch_name: str,
+        current_commit: str,
+        password: Optional[str],
+    ) -> None:
+        """クラウド/HTTP リモートへオブジェクト・コミットを同期（push）"""
+        from . import crypto
+        from .remote_backends import MANIFEST_NAME, get_backend
+
+        backend = get_backend(remote_url)
+        if not backend.writable:
+            from .remote_backends import RemoteBackendError
+
+            raise RemoteBackendError(
+                f"Remote '{remote_url}' is read-only and cannot be pushed to"
+            )
+
+        if password and not crypto.HAS_CRYPTOGRAPHY:
+            raise crypto.CryptoDependencyError()
+
+        def _enc(data: bytes, rel: str) -> bytes:
+            if password and rel.startswith(self._ENCRYPTED_SUBDIRS):
+                return crypto.encrypt_data(data, password)
+            return data
+
+        uploaded: list[str] = []
+
+        # オブジェクトをアップロード
+        objects_dir = self.ssm_path / self.OBJECTS_DIR
+        for obj_file in objects_dir.rglob("*"):
+            if obj_file.is_file():
+                rel = f"{self.OBJECTS_DIR}/{obj_file.relative_to(objects_dir).as_posix()}"
+                uploaded.append(rel)
+                if not backend.exists(rel):
+                    backend.write_bytes(rel, _enc(obj_file.read_bytes(), rel))
+
+        # コミットをアップロード
+        commits_dir = self.ssm_path / self.COMMITS_DIR
+        for commit_file in commits_dir.glob("*.json"):
+            rel = f"{self.COMMITS_DIR}/{commit_file.name}"
+            uploaded.append(rel)
+            if not backend.exists(rel):
+                backend.write_bytes(rel, _enc(commit_file.read_bytes(), rel))
+
+        # タグをアップロード
+        tags_dir = self.ssm_path / self.TAGS_DIR
+        if tags_dir.exists():
+            for tag_file in tags_dir.iterdir():
+                if tag_file.is_file():
+                    rel = f"{self.TAGS_DIR}/{tag_file.name}"
+                    uploaded.append(rel)
+                    backend.write_bytes(rel, _enc(tag_file.read_bytes(), rel))
+
+        # ブランチ参照（コミットハッシュのみ・平文）
+        branch_rel = f"{self.BRANCHES_DIR}/{branch_name}"
+        backend.write_text(branch_rel, current_commit)
+        uploaded.append(branch_rel)
+
+        # マニフェスト（HTTP など一覧不可なバックエンドの pull 用・平文）
+        manifest = {
+            "files": sorted(set(uploaded)),
+            "encrypted": bool(password),
+            "branch": branch_name,
+            "head": current_commit,
+        }
+        backend.write_text(MANIFEST_NAME, json.dumps(manifest, ensure_ascii=False))
+
+    def _pull_from_backend(
+        self,
+        remote_url: str,
+        branch_name: str,
+        password: Optional[str],
+    ) -> str:
+        """クラウド/HTTP リモートからオブジェクト・コミットを同期（pull）
+
+        Returns:
+            str: リモートブランチが指すコミットハッシュ
+        """
+        from . import crypto
+        from .remote_backends import get_backend
+
+        backend = get_backend(remote_url)
+
+        # ブランチ参照を取得
+        branch_rel = f"{self.BRANCHES_DIR}/{branch_name}"
+        if not backend.exists(branch_rel):
+            raise SSMBranchNotFoundError(branch_name)
+        remote_commit = backend.read_text(branch_rel).strip()
+
+        def _dec(data: bytes) -> bytes:
+            return crypto.maybe_decrypt(data, password)
+
+        # 取得対象ファイルを列挙（オブジェクト・コミット・タグのみ）
+        all_files = backend.list_files()
+        targets = [
+            f
+            for f in all_files
+            if f.startswith((f"{self.OBJECTS_DIR}/", f"{self.COMMITS_DIR}/", f"{self.TAGS_DIR}/"))
+        ]
+
+        for rel in targets:
+            local_path = self.ssm_path / rel
+            if local_path.exists():
+                continue
+            data = _dec(backend.read_bytes(rel))
+            local_path.parent.mkdir(parents=True, exist_ok=True)
+            local_path.write_bytes(data)
+
+        return remote_commit
 
 
 # ========== グローバル関数 ==========
@@ -2520,6 +2809,26 @@ def config(key: Optional[str] = None, value: Optional[Any] = None) -> Any:
 def exclude(*names: str) -> None:
     """除外リストに変数を追加"""
     _get_ssm().exclude(*names)
+
+
+def verify(commit_hash: Optional[str] = None) -> dict[str, Any]:
+    """
+    コミットの整合性と署名を検証
+
+    Args:
+        commit_hash: 検証するコミット（Noneの場合はHEAD）
+
+    Returns:
+        dict: 検証結果（integrity_ok, signature_ok, issues など）
+
+    Example:
+        >>> from SessionSmith import ssm
+        >>> ssm.config('sign_key', 'my-secret')   # 署名を有効化
+        >>> ssm.commit('signed snapshot')
+        >>> ssm.verify()
+        {'integrity_ok': True, 'signature_ok': True, ...}
+    """
+    return _get_ssm().verify(commit_hash)
 
 
 # ========== 言語設定関数（非推奨: トップレベルの set_language/get_language を使用) ==========
@@ -2648,6 +2957,8 @@ def export(
     commit_hash: Optional[str] = None,
     format: Optional[str] = None,
     compress: Union[bool, str] = False,
+    *,
+    password: Optional[str] = None,
 ) -> Path:
     """
     コミットを従来形式（.pkl, .json など）でエクスポート
@@ -2657,17 +2968,20 @@ def export(
         commit_hash: エクスポートするコミット（Noneの場合はHEAD）
         format: 出力形式（None の場合は拡張子から自動検出）
         compress: 圧縮形式
+        password: 設定すると出力ファイルを暗号化
 
     Returns:
         Path: 出力されたファイルのパス
     """
-    return _get_ssm().export(output_path, commit_hash, format, compress)
+    return _get_ssm().export(output_path, commit_hash, format, compress, password=password)
 
 
 def import_session(
     input_path: Union[str, Path],
     message: Optional[str] = None,
     format: Optional[str] = None,
+    *,
+    password: Optional[str] = None,
 ) -> str:
     """
     従来形式（.pkl, .json など）からインポートしてコミット
@@ -2676,11 +2990,12 @@ def import_session(
         input_path: 入力ファイルパス
         message: コミットメッセージ
         format: 入力形式
+        password: ファイルが暗号化されている場合の復号パスワード
 
     Returns:
         str: 作成されたコミットのハッシュ
     """
-    return _get_ssm().import_session(input_path, message, format)
+    return _get_ssm().import_session(input_path, message, format, password=password)
 
 
 def convert(
@@ -2862,32 +3177,47 @@ def remote_list() -> dict[str, str]:
     return _get_ssm().remote_list()
 
 
-def push(remote_name: str = "origin", branch_name: Optional[str] = None) -> None:
+def push(
+    remote_name: str = "origin",
+    branch_name: Optional[str] = None,
+    *,
+    password: Optional[str] = None,
+) -> None:
     """
     リモートリポジトリにプッシュ
 
     Args:
         remote_name: リモート名（デフォルト: 'origin'）
         branch_name: プッシュするブランチ（Noneの場合は現在のブランチ）
+        password: 設定するとオブジェクト・コミットを暗号化してアップロード
 
     Example:
         >>> from SessionSmith import ssm
         >>> ssm.push('origin', 'main')
+        >>> ssm.remote_add('cloud', 's3://my-bucket/experiments')
+        >>> ssm.push('cloud', 'main', password='secret')
     """
-    _get_ssm().push(remote_name, branch_name)
+    _get_ssm().push(remote_name, branch_name, password=password)
 
 
-def pull(remote_name: str = "origin", branch_name: Optional[str] = None) -> None:
+def pull(
+    remote_name: str = "origin",
+    branch_name: Optional[str] = None,
+    *,
+    password: Optional[str] = None,
+) -> None:
     """
     リモートリポジトリからプル
 
     Args:
         remote_name: リモート名（デフォルト: 'origin'）
         branch_name: プルするブランチ（Noneの場合は現在のブランチ）
+        password: リモートが暗号化されている場合の復号パスワード
 
     Example:
         >>> from SessionSmith import ssm
         >>> ssm.pull('origin', 'main')
+        >>> ssm.pull('cloud', 'main', password='secret')
     """
-    _get_ssm().pull(remote_name, branch_name)
+    _get_ssm().pull(remote_name, branch_name, password=password)
 

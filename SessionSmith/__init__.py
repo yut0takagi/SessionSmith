@@ -39,6 +39,16 @@ from .compare import compare_sessions, print_comparison
 
 # 後方互換性のためのAPI（非推奨）
 from .core import load_session, save_session
+
+# セキュリティ（暗号化・署名）
+from .crypto import (
+    HAS_CRYPTOGRAPHY,
+    CryptoError,
+    decrypt_data,
+    encrypt_data,
+    sign_data,
+    verify_signature,
+)
 from .error_handling import (
     ErrorHandler,
     error_context,
@@ -76,6 +86,17 @@ from .exceptions import (
 )
 from .i18n import Language, get_language, set_language, t, translate
 from .info import get_session_info, list_session_variables, print_session_info
+
+# ロギング設定
+from .logging_config import (
+    configure_from_env as _configure_logging_from_env,
+)
+from .logging_config import (
+    enable_debug,
+    get_log_level,
+    set_log_level,
+    setup_logging,
+)
 from .manager import SessionManager
 from .serializers import CustomSerializer
 from .ssm import (
@@ -97,7 +118,13 @@ from .tracer import AlgorithmTracer
 from .utils import verify_session
 from .visualizer import print_trace_summary, visualize_algorithm_trace
 
-__version__ = "2.0.0"
+__version__ = "2.1.0"
+
+# 環境変数からロギングを自動設定（SESSIONSMITH_LOG_LEVEL / SESSIONSMITH_LOG_FILE）
+try:
+    _configure_logging_from_env()
+except Exception:  # pragma: no cover - ロギング設定失敗で import を妨げない
+    pass
 
 __all__ = [
     # 主要API（推奨）
@@ -134,6 +161,18 @@ __all__ = [
     "ErrorHandler",
     "set_default_error_handler",
     "get_default_error_handler",
+    # ロギング
+    "setup_logging",
+    "set_log_level",
+    "get_log_level",
+    "enable_debug",
+    # セキュリティ（暗号化・署名）
+    "encrypt_data",
+    "decrypt_data",
+    "sign_data",
+    "verify_signature",
+    "CryptoError",
+    "HAS_CRYPTOGRAPHY",
     # ブランチ・マージ・タグ・リモート機能
     "branch",
     "checkout_branch",
