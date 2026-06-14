@@ -1,8 +1,8 @@
 {
   "name": "sessionsmith",
   "displayName": "SessionSmith",
-  "description": "Session save/load utility for Python sessions in Cursor/VSCode. Save and restore your Python variables seamlessly in Jupyter Notebooks and Python files.",
-  "version": "0.1.0",
+  "description": "Git-style session management for Python with a visual gitgraph-like session graph. Save, restore, branch, tag and inspect your Python variables in Jupyter Notebooks and Python files.",
+  "version": "0.2.0",
   "publisher": "yut0takagi",
   "author": {
     "name": "yut0takagi"
@@ -25,7 +25,10 @@
     "notebook",
     "variables",
     "pickle",
-    "serialization"
+    "serialization",
+    "gitgraph",
+    "version-control",
+    "checkpoint"
   ],
   "engines": {
     "vscode": "^1.80.0"
@@ -33,14 +36,28 @@
   "categories": [
     "Other",
     "Data Science",
-    "Machine Learning"
+    "Machine Learning",
+    "Visualization"
   ],
   "activationEvents": [
-    "onLanguage:python"
+    "onLanguage:python",
+    "onView:sessionsmithSessions"
   ],
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
+      {
+        "command": "sessionsmith.showSessionGraph",
+        "title": "Open Session Graph",
+        "category": "SessionSmith",
+        "icon": "$(git-commit)"
+      },
+      {
+        "command": "sessionsmith.refreshTree",
+        "title": "Refresh Sessions",
+        "category": "SessionSmith",
+        "icon": "$(refresh)"
+      },
       {
         "command": "sessionsmith.saveSession",
         "title": "Save Session",
@@ -57,7 +74,44 @@
         "category": "SessionSmith"
       }
     ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "sessionsmith",
+          "title": "SessionSmith",
+          "icon": "$(git-commit)"
+        }
+      ]
+    },
+    "views": {
+      "sessionsmith": [
+        {
+          "id": "sessionsmithSessions",
+          "name": "Sessions",
+          "icon": "$(git-commit)",
+          "contextualTitle": "SessionSmith"
+        }
+      ]
+    },
     "menus": {
+      "view/title": [
+        {
+          "command": "sessionsmith.showSessionGraph",
+          "when": "view == sessionsmithSessions",
+          "group": "navigation@1"
+        },
+        {
+          "command": "sessionsmith.refreshTree",
+          "when": "view == sessionsmithSessions",
+          "group": "navigation@2"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "sessionsmith.refreshTree",
+          "when": "false"
+        }
+      ],
       "explorer/context": [
         {
           "command": "sessionsmith.showSessionInfo",
@@ -79,4 +133,3 @@
   },
   "dependencies": {}
 }
-
