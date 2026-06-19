@@ -53,6 +53,12 @@ dependencies = []
 
 [project.optional-dependencies]
 visualization = ["matplotlib>=3.5.0"]
+# セッションの暗号化・署名（認証付き暗号）
+crypto = ["cryptography>=3.4"]
+# クラウドストレージ・リモート
+s3 = ["boto3>=1.26"]
+gcs = ["google-cloud-storage>=2.0"]
+cloud = ["boto3>=1.26", "google-cloud-storage>=2.0"]
 dev = [
     "pytest>=7.0.0",
     "pytest-cov>=4.0.0",
@@ -61,9 +67,13 @@ dev = [
     "isort>=5.12.0",
     "mypy>=1.0.0",
     "ruff>=0.1.0",
+    "cryptography>=3.4",
 ]
 all = [
     "matplotlib>=3.5.0",
+    "cryptography>=3.4",
+    "boto3>=1.26",
+    "google-cloud-storage>=2.0",
 ]
 
 [project.scripts]

@@ -5,6 +5,56 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2026-06-13
+
+### Added
+
+#### クラウド / URL リモート対応
+- リモートバックエンド抽象化（`SessionSmith/remote_backends.py`）を追加
+- `ssm.push()` / `ssm.pull()` が以下のリモートに対応:
+  - `s3://bucket/prefix` （Amazon S3 / S3互換、要 `boto3`、extras: `s3`）
+  - `gs://bucket/prefix` （Google Cloud Storage、要 `google-cloud-storage`、extras: `gcs`）
+  - `http(s)://...` （読み取り専用 / pull のみ。`manifest.json` を利用）
+  - `file://...` / ローカルパス（従来通り）
+- push 時に `manifest.json` を生成し、一覧取得ができないバックエンドからの pull に対応
+
+#### セッションの暗号化・改ざん検出
+- 暗号化・署名モジュール（`SessionSmith/crypto.py`）を追加
+- **暗号化**（認証付き暗号 Fernet / AES-128-CBC + HMAC、要 `cryptography`、extras: `crypto`）
+  - `ssm.export(path, password=...)` / `ssm.import_session(path, password=...)`
+  - `ssm.push(..., password=...)` / `ssm.pull(..., password=...)` でリモート上のデータを暗号化
+  - パスワードから PBKDF2-HMAC-SHA256 で鍵を導出
+- **改ざん検出（署名）**（HMAC-SHA256、標準ライブラリのみ・追加依存なし）
+  - `ssm.config('sign_key', ...)` または環境変数 `SESSIONSMITH_SIGN_KEY` で署名鍵を設定すると、
+    コミット時に HMAC 署名を付与
+  - `ssm.verify()` で整合性（オブジェクトの再ハッシュ）と署名を検証
+  - トップレベル API: `encrypt_data`, `decrypt_data`, `sign_data`, `verify_signature`
+
+#### 構造化ロギング
+- ロギング設定モジュール（`SessionSmith/logging_config.py`）を追加
+- `setup_logging()`, `set_log_level()`, `get_log_level()`, `enable_debug()`
+- JSON 形式の構造化ログ、ファイル出力（サイズベースのローテーション）に対応
+- 環境変数 `SESSIONSMITH_LOG_LEVEL` / `SESSIONSMITH_LOG_FILE` / `SESSIONSMITH_LOG_JSON` で
+  import 時に自動設定
+
+#### テスト
+- 新機能のテストを追加: `test_crypto.py`, `test_logging_config.py`,
+  `test_remote_backends.py`（push/pull 統合テスト含む）, `test_verify.py`
+
+### Fixed
+
+- `branch()`, `tag()`, `push()`, `pull()`, `remote_add()` で、関数内のローカル変数 `i18n`
+  がモジュールの `i18n` をシャドウし、特定の経路で `UnboundLocalError` が発生していた
+  バグを修正（リモート新規追加・ローカル push/pull などが失敗していた）
+
+### Dependencies
+
+- オプショナル extras を追加: `crypto`（cryptography）, `s3`（boto3）, `gcs`
+  （google-cloud-storage）, `cloud`（boto3 + google-cloud-storage）
+- いずれも未インストールの環境では該当機能のみ無効化され、ライブラリ全体は動作します
+
+---
+
 ## [2.0.0] - 2025-12-24
 
 ### 🎉 メジャーバージョンアップ
