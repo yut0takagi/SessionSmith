@@ -28,6 +28,9 @@
 - 🚀 **拡張機能対応**: Cursor/VSCode拡張機能でコードを書かずに実行可能
 - 🌐 **多言語対応**: 日本語・英語のエラーメッセージに対応
 - 🛡️ **堅牢なエラーハンドリング**: リトライ、詳細なエラー情報、コンテキスト管理
+- ☁️ **クラウドリモート**（v2.1.0）: S3 / GCS / HTTP へ `push` / `pull`
+- 🔐 **暗号化・改ざん検出**（v2.1.0）: 認証付き暗号でのエクスポート、HMAC 署名による検証
+- 📝 **構造化ロギング**（v2.1.0）: ログレベル・ファイル出力・JSON ログ
 
 ## インストール
 
@@ -54,6 +57,18 @@ pip install SessionSmith[visualization]
 # または
 pip install matplotlib
 ```
+
+オプション機能（v2.1.0）:
+
+```bash
+pip install SessionSmith[crypto]   # 暗号化（cryptography）
+pip install SessionSmith[s3]       # S3 リモート（boto3）
+pip install SessionSmith[gcs]      # GCS リモート（google-cloud-storage）
+pip install SessionSmith[cloud]    # S3 + GCS
+pip install SessionSmith[all]      # すべて
+```
+
+> 署名（HMAC）・構造化ロギングは追加依存なしで利用できます。
 
 ## クイックスタート
 
@@ -177,6 +192,61 @@ lang = get_language()  # 'ja' または 'en'
 
 エラーメッセージや情報メッセージが設定した言語で表示されます。
 SSMが初期化されている場合、言語設定は自動的に `.ssm/config` に保存されます。
+
+### クラウド / URL リモート（v2.1.0）
+
+```python
+from SessionSmith import ssm
+
+ssm.init()
+ssm.commit("experiment v1")
+
+# クラウドリモートを登録して push / pull
+ssm.remote_add("cloud", "s3://my-bucket/experiments")      # S3
+# ssm.remote_add("cloud", "gs://my-bucket/experiments")    # GCS
+# ssm.remote_add("cloud", "file:///shared/ssm-remote")     # 共有ディレクトリ
+ssm.push("cloud", "main")
+
+# 別マシン / 別リポジトリから取得
+ssm.pull("cloud", "main")
+
+# HTTP(S) 越しの読み取り（pull のみ）
+ssm.remote_add("mirror", "https://example.com/ssm-repo")
+ssm.pull("mirror", "main")
+```
+
+### 暗号化・改ざん検出（v2.1.0）
+
+```python
+from SessionSmith import ssm
+
+# --- 暗号化（要 pip install SessionSmith[crypto]）---
+ssm.export("backup.pkl", password="my-secret")          # 暗号化してエクスポート
+ssm.import_session("backup.pkl", password="my-secret")  # 復号してインポート
+ssm.push("cloud", "main", password="my-secret")         # リモート上のデータを暗号化
+
+# --- 改ざん検出（HMAC 署名・追加依存なし）---
+ssm.config("sign_key", "team-secret")  # 署名鍵を設定（環境変数 SESSIONSMITH_SIGN_KEY でも可）
+ssm.commit("signed snapshot")          # 以降のコミットに署名が付与される
+
+result = ssm.verify()  # 整合性（再ハッシュ）と署名を検証
+# {'integrity_ok': True, 'signed': True, 'signature_ok': True, 'issues': []}
+```
+
+### 構造化ロギング（v2.1.0）
+
+```python
+from SessionSmith import setup_logging, enable_debug, set_log_level
+
+setup_logging(level="INFO", log_file="ssm.log")  # ファイル出力（ローテーション付き）
+setup_logging(level="INFO", json_format=True)    # JSON 構造化ログ
+enable_debug()                                   # デバッグモード
+
+# 環境変数でも設定可能:
+#   SESSIONSMITH_LOG_LEVEL=DEBUG
+#   SESSIONSMITH_LOG_FILE=ssm.log
+#   SESSIONSMITH_LOG_JSON=1
+```
 
 ### レガシーAPI（後方互換性）
 
