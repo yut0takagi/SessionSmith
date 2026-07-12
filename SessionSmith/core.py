@@ -46,8 +46,13 @@ def _validate_file_path(file_path: Union[str, Path]) -> Path:
     if not isinstance(file_path, (str, Path)):
         raise TypeError(f"file_path must be str or Path, got {type(file_path).__name__}")
 
-    if not str(file_path).strip():
+    path_str = str(file_path)
+
+    if not path_str.strip():
         raise ValueError("file_path cannot be empty")
+
+    if any(ord(ch) < 0x20 or ord(ch) == 0x7F for ch in path_str):
+        raise ValueError("file_path must not contain control characters")
 
     return Path(file_path)
 
