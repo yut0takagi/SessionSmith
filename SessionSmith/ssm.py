@@ -29,6 +29,7 @@ import shutil
 import threading
 import time
 import warnings
+from collections import OrderedDict
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -242,10 +243,6 @@ class CheckpointContext:
     def _save_checkpoint_unsafe(self, message: str = "") -> bool:
         """チェックポイントを保存（ロックなし、内部実装）"""
         try:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"checkpoint_{timestamp}.gz"
-            filepath = self.checkpoint_dir / filename
-
             # グローバル変数を取得
             globals_dict = self.ssm._get_globals_dict(depth=5)
             variables = self.ssm._get_saveable_vars(globals_dict, verbose=False)
@@ -271,6 +268,22 @@ class CheckpointContext:
             # ProcessLock 側がスレッド間で正しく排他する
             # （デッドロックはしない。単に一方が完了するまで待つだけ）。
             with self.ssm._repo_lock():
+                # ファイル名は秒までではなくマイクロ秒まで含めて一意性を
+                # 高める。cp.step(force=True) を同じ秒内に連続して呼んだ
+                # 場合でも `checkpoint_%Y%m%d_%H%M%S.gz` だけでは衝突し、
+                # 後発の書き込みが先発のチェックポイントを黙って上書きして
+                # しまうため。それでも同一マイクロ秒で衝突した場合に備え、
+                # （タイムスタンプ接頭辞を保った辞書順ソートを維持したまま）
+                # 単調増加のカウンタを付与して確実に一意なパスにする。
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+                filename = f"checkpoint_{timestamp}.gz"
+                filepath = self.checkpoint_dir / filename
+                dedup_counter = 0
+                while filepath.exists():
+                    dedup_counter += 1
+                    filename = f"checkpoint_{timestamp}_{dedup_counter:03d}.gz"
+                    filepath = self.checkpoint_dir / filename
+
                 with gzip.open(filepath, 'wb') as f:
                     pickle.dump(checkpoint_data, f)
 
@@ -439,6 +452,9 @@ class SSM:
     RETRY_DELAY_SECONDS = 0.5  # リトライ間隔
     LOCK_TIMEOUT_SECONDS = 10.0  # リポジトリロック（.ssm/.lock）取得のデフォルトタイムアウト
 
+    COMMIT_HASH_LENGTH = 16  # _hash_object() が返すハッシュ（16進数文字列）の長さ
+    _FILE_LOCK_CACHE_MAX = 512  # _file_locks の上限（LRUエビクションの閾値）
+
     def __init__(self, path: Optional[Union[str, Path]] = None, globals_dict: Optional[dict[str, Any]] = None):
         """
         Args:
@@ -483,12 +499,26 @@ class SSM:
                 logger.warning(f"Failed to initialize ResourceManager: {e}")
 
         # ファイルロック（簡易版）
-        self._file_locks: dict[str, threading.Lock] = {}
+        # 無制限に増え続けないよう、LRU（最近使ったものを末尾に置く
+        # OrderedDict）としてキャッシュし、上限 _FILE_LOCK_CACHE_MAX 件を
+        # 超えたら最も使われていないエントリを破棄する
+        # （commits/<hash>.json のようにコミットごとに一意なパスへの
+        # ロックが際限なく溜まり続けるメモリリークを防ぐため）
+        self._file_locks: OrderedDict[str, threading.Lock] = OrderedDict()
         self._locks_lock = threading.Lock()
 
     def _get_file_lock(self, file_path: str) -> threading.Lock:
         """
         ファイルパスに対応するロックを取得
+
+        `_file_locks` はLRUキャッシュとして管理されており、上限
+        （`_FILE_LOCK_CACHE_MAX`）を超えると最も古く使われたパスの
+        ロックが破棄される。破棄されたパスに再度アクセスすると新しい
+        ロックオブジェクトが作られるが、実際の書き込み直列化は
+        `_repo_lock()`（リポジトリ全体のプロセス間ロック）と
+        `_write_text_atomic()` のアトミックな `os.replace` によって
+        担保されているため、冷えたパスのロックが入れ替わっても
+        安全性には影響しない（同一パスへの同時書き込みが稀という前提）。
 
         Args:
             file_path: ファイルパス
@@ -497,9 +527,20 @@ class SSM:
             threading.Lock: ファイルロック
         """
         with self._locks_lock:
-            if file_path not in self._file_locks:
-                self._file_locks[file_path] = threading.Lock()
-            return self._file_locks[file_path]
+            lock = self._file_locks.get(file_path)
+            if lock is not None:
+                # LRU: 直近で使ったものを末尾に移動
+                self._file_locks.move_to_end(file_path)
+                return lock
+
+            lock = threading.Lock()
+            self._file_locks[file_path] = lock
+
+            if len(self._file_locks) > self._FILE_LOCK_CACHE_MAX:
+                # 最も古い（最近使われていない）エントリを破棄
+                self._file_locks.popitem(last=False)
+
+            return lock
 
     def _repo_lock(self, timeout: Optional[float] = None) -> ProcessLock:
         """
@@ -823,7 +864,7 @@ class SSM:
 
     def _hash_object(self, data: bytes) -> str:
         """オブジェクトのハッシュを計算"""
-        return hashlib.sha256(data).hexdigest()[:16]
+        return hashlib.sha256(data).hexdigest()[:self.COMMIT_HASH_LENGTH]
 
     def _store_object(self, data: bytes) -> str:
         """オブジェクトを保存してハッシュを返す"""
@@ -1310,9 +1351,32 @@ class SSM:
             warn_msg = i18n.translate("warn.partial_load", loaded=restored, total=restored + failed)
             print(f"  ⚠️ {warn_msg}")
 
+    def _is_full_hash_candidate(self, value: str) -> bool:
+        """`value` が完全な長さの16進数ハッシュに見えるかを判定する"""
+        if len(value) != self.COMMIT_HASH_LENGTH:
+            return False
+        try:
+            int(value, 16)
+        except ValueError:
+            return False
+        return True
+
     def _resolve_hash(self, short_hash: str) -> str:
         """短縮ハッシュを完全なハッシュに展開"""
         commits_dir = self.ssm_path / self.COMMITS_DIR
+
+        # 高速パス: 完全な長さの16進数ハッシュで、対応するコミット
+        # ファイルが実在する場合は commits/ ディレクトリ全体を走査せず
+        # 即座に返す（O(1)）。完全長のハッシュは長さが同じである以上、
+        # 他のハッシュの真の接頭辞にはなり得ないため、この場合の
+        # 「一致」は glob による接頭辞検索の結果と意味的に等価である。
+        # ここで見つからない場合（未知のハッシュ）は、下の接頭辞検索に
+        # フォールバックしても同じ「0件マッチ」の結果になるため、
+        # 例外の型・メッセージは変わらない。
+        if self._is_full_hash_candidate(short_hash):
+            candidate = commits_dir / f"{short_hash}.json"
+            if candidate.exists():
+                return short_hash
 
         matches = []
         for commit_file in commits_dir.glob("*.json"):
