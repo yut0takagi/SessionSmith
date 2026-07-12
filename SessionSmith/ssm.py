@@ -48,6 +48,7 @@ from .exceptions import (
     _get_i18n,
 )
 from .jupyter_utils import is_jupyter_environment, is_jupyter_internal_var
+from .locking import ProcessLock
 
 # リソース管理（オプショナル）
 try:
@@ -262,15 +263,21 @@ class CheckpointContext:
                 "variables": variables,
             }
 
-            # 保存
-            with gzip.open(filepath, 'wb') as f:
-                pickle.dump(checkpoint_data, f)
+            # 保存。SSM リポジトリのロックで直列化する。これは
+            # CheckpointContext 自身の `self._lock`（threading.Lock）とは
+            # 別物で、バックグラウンドのチェックポイントスレッドが
+            # メインスレッドの commit() 等と同時に書き込もうとしても、
+            # ProcessLock 側がスレッド間で正しく排他する
+            # （デッドロックはしない。単に一方が完了するまで待つだけ）。
+            with self.ssm._repo_lock():
+                with gzip.open(filepath, 'wb') as f:
+                    pickle.dump(checkpoint_data, f)
 
-            self._checkpoint_count += 1
-            self._last_checkpoint = time.time()
+                self._checkpoint_count += 1
+                self._last_checkpoint = time.time()
 
-            # 古いチェックポイントを削除
-            self._cleanup_old_checkpoints()
+                # 古いチェックポイントを削除
+                self._cleanup_old_checkpoints()
 
             logger.info(f"Checkpoint saved: {filepath}")
             return True
@@ -429,6 +436,7 @@ class SSM:
     MAX_TOTAL_SIZE_MB = 2000  # 総サイズの上限（MB）
     MAX_RETRY_ATTEMPTS = 3  # リトライ回数
     RETRY_DELAY_SECONDS = 0.5  # リトライ間隔
+    LOCK_TIMEOUT_SECONDS = 10.0  # リポジトリロック（.ssm/.lock）取得のデフォルトタイムアウト
 
     def __init__(self, path: Optional[Union[str, Path]] = None, globals_dict: Optional[dict[str, Any]] = None):
         """
@@ -491,6 +499,34 @@ class SSM:
             if file_path not in self._file_locks:
                 self._file_locks[file_path] = threading.Lock()
             return self._file_locks[file_path]
+
+    def _repo_lock(self, timeout: Optional[float] = None) -> ProcessLock:
+        """
+        `.ssm` リポジトリ全体を対象としたプロセス間・スレッド間の排他ロックを返す
+
+        このロックは `.ssm/.lock` ファイルを用いてプロセスをまたいで排他し、
+        同一プロセス内では（同じスレッドが再入する限り）デッドロックしない。
+
+        ポリシー: HEAD / branches / tags / commits / config を書き込む
+        すべての公開操作（commit, config(set), branch(create=True),
+        checkout / checkout_branch / checkout_tag, tag, merge, remote_add,
+        push, pull, チェックポイント保存）はこのロックで直列化される。
+        `log` / `status` / `diff` / `list_tags` / `remote_list` のような
+        読み取り専用操作は、パフォーマンスのためロックを取得しない
+        （読み取り中に書き込みと競合しても、最悪でも「やや古い状態を読む」
+        だけで、破損は起きない設計になっている）。
+
+        Args:
+            timeout: ロック取得を待つ最大秒数（Noneの場合は
+                `LOCK_TIMEOUT_SECONDS` を使用）
+
+        Returns:
+            ProcessLock: `with` 文で使うコンテキストマネージャー
+        """
+        return ProcessLock(
+            self.ssm_path,
+            timeout=timeout if timeout is not None else self.LOCK_TIMEOUT_SECONDS,
+        )
 
     def _verify_file_integrity(self, file_path: Path) -> bool:
         """
@@ -660,7 +696,7 @@ class SSM:
         self._write_json(self.ssm_path / self.CONFIG_FILE, config)
 
         # HEADを初期化（空）
-        (self.ssm_path / self.HEAD_FILE).write_text("")
+        self._write_text_atomic(self.ssm_path / self.HEAD_FILE, "")
 
         message = i18n.translate("info.ssm_initialized", base_path=self.base_path)
         print(f"✓ {message}")
@@ -726,6 +762,27 @@ class SSM:
                         raise
                 else:
                     raise
+
+    def _write_text_atomic(self, path: Path, text: str) -> None:
+        """
+        短いテキストファイル（HEAD, branches/<name>, tags/<name> の参照先
+        コミットハッシュなど）をアトミックに書き込む。
+
+        同一ディレクトリに一時ファイルを書き、`os.replace` で置き換える。
+        `os.replace` は POSIX / Windows のどちらでもアトミックなリネームを
+        保証するため、`log()` / `status()` のようにロックを取らずに読む
+        側が、書き込み途中の空ファイルや欠損ファイルを観測することがない。
+
+        Args:
+            path: ファイルパス
+            text: 書き込む文字列
+        """
+        lock = self._get_file_lock(str(path))
+        with lock:
+            temp_path = path.with_name(path.name + '.tmp')
+            with open(temp_path, 'w', encoding='utf-8') as f:
+                f.write(text)
+            os.replace(temp_path, path)
 
     def _read_json(self, path: Path) -> Any:
         """
@@ -993,108 +1050,114 @@ class SSM:
             raise ValidationError("author", "Author name must be 100 characters or less")
 
         globals_dict = self._get_globals_dict(depth=3)
-        variables = self._get_saveable_vars(globals_dict)
 
-        if not variables:
-            logger.warning("No variables to commit")
-            warn_msg = i18n.translate("msg.no_variables")
-            print(f"⚠ {warn_msg}")
-            return ""
+        # コミット全体（変数の読み取りから HEAD/branch 更新まで）を
+        # リポジトリロックで直列化する。他プロセス／他スレッドの commit や
+        # checkout と競合しても、HEAD・ブランチ参照・コミット・オブジェクト
+        # が壊れたり半端な状態で観測されたりしないようにするため。
+        with self._repo_lock():
+            variables = self._get_saveable_vars(globals_dict)
 
-        # リソースチェック（ディスク容量、メモリ）
-        if self._resource_manager:
-            try:
-                # 必要な容量を概算（変数の総サイズ）
-                total_size_mb = sum(
-                    len(pickle.dumps(v)) / (1024 * 1024)
-                    for v in variables.values()
-                )
-                self._resource_manager.check_disk_space(required_mb=total_size_mb, auto_cleanup=True)
-                self._resource_manager.check_memory_usage(required_mb=total_size_mb, auto_gc=True)
-            except Exception as e:
-                logger.warning(f"Resource check failed: {e}")
+            if not variables:
+                logger.warning("No variables to commit")
+                warn_msg = i18n.translate("msg.no_variables")
+                print(f"⚠ {warn_msg}")
+                return ""
 
-        # 各変数をオブジェクトとして保存
-        var_hashes: dict[str, dict[str, Any]] = {}
-        failed_vars: list[str] = []
+            # リソースチェック（ディスク容量、メモリ）
+            if self._resource_manager:
+                try:
+                    # 必要な容量を概算（変数の総サイズ）
+                    total_size_mb = sum(
+                        len(pickle.dumps(v)) / (1024 * 1024)
+                        for v in variables.values()
+                    )
+                    self._resource_manager.check_disk_space(required_mb=total_size_mb, auto_cleanup=True)
+                    self._resource_manager.check_memory_usage(required_mb=total_size_mb, auto_gc=True)
+                except Exception as e:
+                    logger.warning(f"Resource check failed: {e}")
 
-        for name, value in variables.items():
-            try:
-                data = pickle.dumps(value)
-                obj_hash = self._store_object(data)
-                var_hashes[name] = {
-                    "hash": obj_hash,
-                    "type": type(value).__name__,
-                    "size": len(data),
-                }
-                logger.debug(f"Stored variable: {name} (hash: {obj_hash[:7]})")
-            except Exception as e:
-                failed_vars.append(name)
-                logger.warning(f"Failed to serialize '{name}': {e}")
+            # 各変数をオブジェクトとして保存
+            var_hashes: dict[str, dict[str, Any]] = {}
+            failed_vars: list[str] = []
 
-        if failed_vars:
-            warnings.warn(f"Failed to serialize: {', '.join(failed_vars)}", stacklevel=2)
+            for name, value in variables.items():
+                try:
+                    data = pickle.dumps(value)
+                    obj_hash = self._store_object(data)
+                    var_hashes[name] = {
+                        "hash": obj_hash,
+                        "type": type(value).__name__,
+                        "size": len(data),
+                    }
+                    logger.debug(f"Stored variable: {name} (hash: {obj_hash[:7]})")
+                except Exception as e:
+                    failed_vars.append(name)
+                    logger.warning(f"Failed to serialize '{name}': {e}")
 
-        # 親コミットを取得（現在のブランチから）
-        current_branch = self.get_current_branch()
-        if current_branch:
-            branch_file = self.ssm_path / self.BRANCHES_DIR / current_branch
-            if branch_file.exists():
-                parent = branch_file.read_text().strip() or None
+            if failed_vars:
+                warnings.warn(f"Failed to serialize: {', '.join(failed_vars)}", stacklevel=2)
+
+            # 親コミットを取得（現在のブランチから）
+            current_branch = self.get_current_branch()
+            if current_branch:
+                branch_file = self.ssm_path / self.BRANCHES_DIR / current_branch
+                if branch_file.exists():
+                    parent = branch_file.read_text().strip() or None
+                else:
+                    head_file = self.ssm_path / self.HEAD_FILE
+                    parent = head_file.read_text().strip() or None
             else:
                 head_file = self.ssm_path / self.HEAD_FILE
                 parent = head_file.read_text().strip() or None
-        else:
+
+            # 呼び出し元の情報を取得（ファイル名、関数名など）
+            caller_info = self._get_caller_info(depth=3)
+
+            # コミット情報を作成
+            commit_data = {
+                "message": message or "Snapshot",
+                "author": author or os.environ.get("USER", "unknown"),
+                "timestamp": datetime.now().isoformat(),
+                "parent": parent,
+                "variables": var_hashes,
+                "caller": caller_info,  # 呼び出し元の情報を追加
+            }
+
+            # 署名鍵が設定されていれば HMAC 署名を付与（改ざん検出）
+            sign_key = self._get_sign_key()
+            if sign_key:
+                from . import crypto
+
+                payload = self._signing_payload(var_hashes)
+                commit_data["signature"] = crypto.sign_data(payload, sign_key)
+
+            # コミットを保存
+            commit_bytes = json.dumps(commit_data, indent=2).encode('utf-8')
+            commit_hash = self._hash_object(commit_bytes)
+
+            commit_path = self.ssm_path / self.COMMITS_DIR / f"{commit_hash}.json"
+            self._write_json(commit_path, commit_data)
+
+            # HEADを更新
             head_file = self.ssm_path / self.HEAD_FILE
-            parent = head_file.read_text().strip() or None
+            self._write_text_atomic(head_file, commit_hash)
 
-        # 呼び出し元の情報を取得（ファイル名、関数名など）
-        caller_info = self._get_caller_info(depth=3)
+            # 現在のブランチを更新
+            if current_branch:
+                branch_file = self.ssm_path / self.BRANCHES_DIR / current_branch
+                self._write_text_atomic(branch_file, commit_hash)
+            else:
+                # デフォルトブランチがなければ作成
+                config = self._read_json(self.ssm_path / self.CONFIG_FILE)
+                default_branch = config.get("default_branch", "main")
+                branch_file = self.ssm_path / self.BRANCHES_DIR / default_branch
+                self._write_text_atomic(branch_file, commit_hash)
+                config["current_branch"] = default_branch
+                self._write_json(self.ssm_path / self.CONFIG_FILE, config)
 
-        # コミット情報を作成
-        commit_data = {
-            "message": message or "Snapshot",
-            "author": author or os.environ.get("USER", "unknown"),
-            "timestamp": datetime.now().isoformat(),
-            "parent": parent,
-            "variables": var_hashes,
-            "caller": caller_info,  # 呼び出し元の情報を追加
-        }
-
-        # 署名鍵が設定されていれば HMAC 署名を付与（改ざん検出）
-        sign_key = self._get_sign_key()
-        if sign_key:
-            from . import crypto
-
-            payload = self._signing_payload(var_hashes)
-            commit_data["signature"] = crypto.sign_data(payload, sign_key)
-
-        # コミットを保存
-        commit_bytes = json.dumps(commit_data, indent=2).encode('utf-8')
-        commit_hash = self._hash_object(commit_bytes)
-
-        commit_path = self.ssm_path / self.COMMITS_DIR / f"{commit_hash}.json"
-        self._write_json(commit_path, commit_data)
-
-        # HEADを更新
-        head_file = self.ssm_path / self.HEAD_FILE
-        head_file.write_text(commit_hash)
-
-        # 現在のブランチを更新
-        if current_branch:
-            branch_file = self.ssm_path / self.BRANCHES_DIR / current_branch
-            branch_file.write_text(commit_hash)
-        else:
-            # デフォルトブランチがなければ作成
-            config = self._read_json(self.ssm_path / self.CONFIG_FILE)
-            default_branch = config.get("default_branch", "main")
-            branch_file = self.ssm_path / self.BRANCHES_DIR / default_branch
-            branch_file.write_text(commit_hash)
-            config["current_branch"] = default_branch
-            self._write_json(self.ssm_path / self.CONFIG_FILE, config)
-
-        # 最新スナップショットも保存
-        self._save_snapshot("latest", variables)
+            # 最新スナップショットも保存
+            self._save_snapshot("latest", variables)
 
         var_count = len(variables)
         short_hash = commit_hash[:7]
@@ -1188,44 +1251,49 @@ class SSM:
         """
         self._ensure_initialized()
 
-        if commit_hash is None:
-            # HEADのコミットを復元
-            head_file = self.ssm_path / self.HEAD_FILE
-            commit_hash = head_file.read_text().strip()
-            if not commit_hash:
-                logger.error("No commits to checkout")
-                raise SSMNoCommitsError()
+        # commit() / checkout_branch() などの書き込みと直列化し、書き込み
+        # 途中（半端に更新された HEAD やコミットファイル）を観測しないように
+        # する。同一スレッドから checkout_branch() 等が既にロックを保持した
+        # 状態で呼ばれても、ProcessLock は再入可能なのでデッドロックしない。
+        with self._repo_lock():
+            if commit_hash is None:
+                # HEADのコミットを復元
+                head_file = self.ssm_path / self.HEAD_FILE
+                commit_hash = head_file.read_text().strip()
+                if not commit_hash:
+                    logger.error("No commits to checkout")
+                    raise SSMNoCommitsError()
 
-        # 短縮ハッシュを展開
-        try:
-            full_hash = self._resolve_hash(commit_hash)
-        except ValueError:
-            logger.error(f"Commit not found: {commit_hash}")
-            raise SSMCommitNotFoundError(commit_hash) from None
-
-        commit_path = self.ssm_path / self.COMMITS_DIR / f"{full_hash}.json"
-        if not commit_path.exists():
-            logger.error(f"Commit file not found: {commit_path}")
-            raise SSMCommitNotFoundError(commit_hash)
-
-        commit_data = self._read_json(commit_path)
-
-        # 変数を復元
-        globals_dict = self._get_globals_dict(depth=3)
-        restored = 0
-        failed = 0
-
-        for name, var_info in commit_data.get("variables", {}).items():
+            # 短縮ハッシュを展開
             try:
-                data = self._load_object(var_info["hash"])
-                value = pickle.loads(data)
-                globals_dict[name] = value
-                restored += 1
-                logger.debug(f"Restored variable: {name}")
-            except Exception as e:
-                failed += 1
-                logger.warning(f"Failed to restore '{name}': {e}")
-                warnings.warn(f"Failed to restore '{name}': {e}", stacklevel=2)
+                full_hash = self._resolve_hash(commit_hash)
+            except ValueError:
+                logger.error(f"Commit not found: {commit_hash}")
+                raise SSMCommitNotFoundError(commit_hash) from None
+
+            commit_path = self.ssm_path / self.COMMITS_DIR / f"{full_hash}.json"
+            if not commit_path.exists():
+                logger.error(f"Commit file not found: {commit_path}")
+                raise SSMCommitNotFoundError(commit_hash)
+
+            commit_data = self._read_json(commit_path)
+
+            # 変数を復元
+            globals_dict = self._get_globals_dict(depth=3)
+            restored = 0
+            failed = 0
+
+            for name, var_info in commit_data.get("variables", {}).items():
+                try:
+                    data = self._load_object(var_info["hash"])
+                    value = pickle.loads(data)
+                    globals_dict[name] = value
+                    restored += 1
+                    logger.debug(f"Restored variable: {name}")
+                except Exception as e:
+                    failed += 1
+                    logger.warning(f"Failed to restore '{name}': {e}")
+                    warnings.warn(f"Failed to restore '{name}': {e}", stacklevel=2)
 
         logger.info(f"Restored {restored} variables from {full_hash[:7]}")
         info_msg = i18n.translate("info.variables_restored", restored=restored, short_hash=full_hash[:7])
@@ -1854,21 +1922,27 @@ class SSM:
         self._ensure_initialized()
 
         config_path = self.ssm_path / self.CONFIG_FILE
-        config = self._read_json(config_path)
 
         if key is None:
-            # 全設定を表示
+            # 全設定を表示（読み取り専用なのでロックは取らない）
+            config = self._read_json(config_path)
             for k, v in config.items():
                 print(f"{k}: {v}")
             return config
 
         if value is None:
-            # 値を取得
+            # 値を取得（読み取り専用なのでロックは取らない）
+            config = self._read_json(config_path)
             return config.get(key)
 
-        # 値を設定
-        config[key] = value
-        self._write_json(config_path, config)
+        # 値を設定。他の書き込み（他プロセスの config/commit 等）と
+        # 直列化し、ロック内で改めて config を読み直すことで、
+        # 「読んでから書くまでの間」に別プロセスが加えた変更を
+        # 上書きして失ってしまうこと（lost update）を防ぐ。
+        with self._repo_lock():
+            config = self._read_json(config_path)
+            config[key] = value
+            self._write_json(config_path, config)
         # 言語設定の場合はグローバル設定も更新（循環参照を避けるためsave_to_ssm=False）
         if key == "language":
             try:
@@ -1889,13 +1963,15 @@ class SSM:
         self._ensure_initialized()
 
         config_path = self.ssm_path / self.CONFIG_FILE
-        config = self._read_json(config_path)
 
-        exclude_list = set(config.get("exclude", []))
-        exclude_list.update(names)
-        config["exclude"] = list(exclude_list)
+        # config の read-modify-write を他の書き込みと直列化する
+        with self._repo_lock():
+            config = self._read_json(config_path)
+            exclude_list = set(config.get("exclude", []))
+            exclude_list.update(names)
+            config["exclude"] = list(exclude_list)
+            self._write_json(config_path, config)
 
-        self._write_json(config_path, config)
         print(f"✓ Added to exclude: {', '.join(names)}")
 
     # ========== 署名・整合性検証 ==========
@@ -2035,26 +2111,27 @@ class SSM:
         branch_file = branches_dir / branch_name
 
         if create:
-            # 新しいブランチを作成
-            if branch_file.exists():
-                error_msg = i18n.translate("error.branch_already_exists", branch_name=branch_name)
-                raise SSMConfigError(error_msg)
+            with self._repo_lock():
+                # 新しいブランチを作成
+                if branch_file.exists():
+                    error_msg = i18n.translate("error.branch_already_exists", branch_name=branch_name)
+                    raise SSMConfigError(error_msg)
 
-            # 現在のHEADを取得
-            head_file = self.ssm_path / self.HEAD_FILE
-            current_commit = head_file.read_text().strip()
+                # 現在のHEADを取得
+                head_file = self.ssm_path / self.HEAD_FILE
+                current_commit = head_file.read_text().strip()
 
-            if not current_commit:
-                raise SSMNoCommitsError()
+                if not current_commit:
+                    raise SSMNoCommitsError()
 
-            # ブランチファイルを作成
-            branch_file.write_text(current_commit)
+                # ブランチファイルを作成
+                self._write_text_atomic(branch_file, current_commit)
 
-            # デフォルトブランチがなければ設定
-            config = self._read_json(self.ssm_path / self.CONFIG_FILE)
-            if "default_branch" not in config:
-                config["default_branch"] = "main"
-                self._write_json(self.ssm_path / self.CONFIG_FILE, config)
+                # デフォルトブランチがなければ設定
+                config = self._read_json(self.ssm_path / self.CONFIG_FILE)
+                if "default_branch" not in config:
+                    config["default_branch"] = "main"
+                    self._write_json(self.ssm_path / self.CONFIG_FILE, config)
 
             info_msg = i18n.translate("info.branch_created", branch_name=branch_name, commit=current_commit[:7])
             print(f"✓ {info_msg}")
@@ -2078,24 +2155,27 @@ class SSM:
         """
         self._ensure_initialized()
 
-        branch_file = self.ssm_path / self.BRANCHES_DIR / branch_name
-        if not branch_file.exists():
-            raise SSMBranchNotFoundError(branch_name)
+        # HEAD更新・config更新・checkout()（自身も再入的にロックを取る）を
+        # 1つの操作として直列化する
+        with self._repo_lock():
+            branch_file = self.ssm_path / self.BRANCHES_DIR / branch_name
+            if not branch_file.exists():
+                raise SSMBranchNotFoundError(branch_name)
 
-        # ブランチのコミットを取得
-        commit_hash = branch_file.read_text().strip()
+            # ブランチのコミットを取得
+            commit_hash = branch_file.read_text().strip()
 
-        # HEADを更新
-        head_file = self.ssm_path / self.HEAD_FILE
-        head_file.write_text(commit_hash)
+            # HEADを更新
+            head_file = self.ssm_path / self.HEAD_FILE
+            self._write_text_atomic(head_file, commit_hash)
 
-        # 現在のブランチを設定ファイルに保存
-        config = self._read_json(self.ssm_path / self.CONFIG_FILE)
-        config["current_branch"] = branch_name
-        self._write_json(self.ssm_path / self.CONFIG_FILE, config)
+            # 現在のブランチを設定ファイルに保存
+            config = self._read_json(self.ssm_path / self.CONFIG_FILE)
+            config["current_branch"] = branch_name
+            self._write_json(self.ssm_path / self.CONFIG_FILE, config)
 
-        # 変数を復元
-        self.checkout(commit_hash)
+            # 変数を復元（ProcessLock は再入可能なのでここでデッドロックしない）
+            self.checkout(commit_hash)
 
         info_msg = i18n.translate("info.branch_checked_out", branch_name=branch_name)
         print(f"✓ {info_msg}")
@@ -2131,79 +2211,80 @@ class SSM:
         """
         self._ensure_initialized()
 
-        # マージ元のブランチを取得
-        branch_file = self.ssm_path / self.BRANCHES_DIR / branch_name
-        if not branch_file.exists():
-            raise SSMBranchNotFoundError(branch_name)
+        with self._repo_lock():
+            # マージ元のブランチを取得
+            branch_file = self.ssm_path / self.BRANCHES_DIR / branch_name
+            if not branch_file.exists():
+                raise SSMBranchNotFoundError(branch_name)
 
-        merge_commit = branch_file.read_text().strip()
+            merge_commit = branch_file.read_text().strip()
 
-        # 現在のHEADを取得
-        head_file = self.ssm_path / self.HEAD_FILE
-        current_commit = head_file.read_text().strip()
+            # 現在のHEADを取得
+            head_file = self.ssm_path / self.HEAD_FILE
+            current_commit = head_file.read_text().strip()
 
-        if not current_commit:
-            raise SSMNoCommitsError()
+            if not current_commit:
+                raise SSMNoCommitsError()
 
-        # 既にマージ済みかチェック
-        if merge_commit == current_commit:
-            info_msg = i18n.translate("info.already_merged", branch_name=branch_name)
-            print(f"✓ {info_msg}")
-            return current_commit
+            # 既にマージ済みかチェック
+            if merge_commit == current_commit:
+                info_msg = i18n.translate("info.already_merged", branch_name=branch_name)
+                print(f"✓ {info_msg}")
+                return current_commit
 
-        # 2つのコミットの共通祖先を探す（簡易版：最初の共通コミット）
-        self._find_common_ancestor(current_commit, merge_commit)
+            # 2つのコミットの共通祖先を探す（簡易版：最初の共通コミット）
+            self._find_common_ancestor(current_commit, merge_commit)
 
-        # マージコミットを作成（2つの親を持つ）
-        globals_dict = self._get_globals_dict(depth=3)
-        variables = self._get_saveable_vars(globals_dict)
+            # マージコミットを作成（2つの親を持つ）
+            globals_dict = self._get_globals_dict(depth=3)
+            variables = self._get_saveable_vars(globals_dict)
 
-        if not variables:
-            raise SSMError("No variables to merge")
+            if not variables:
+                raise SSMError("No variables to merge")
 
-        # 変数を保存
-        var_hashes: dict[str, dict[str, Any]] = {}
-        for name, value in variables.items():
-            try:
-                data = pickle.dumps(value)
-                obj_hash = self._store_object(data)
-                var_hashes[name] = {
-                    "hash": obj_hash,
-                    "type": type(value).__name__,
-                    "size": len(data),
-                }
-            except Exception as e:
-                logger.warning(f"Failed to serialize '{name}': {e}")
+            # 変数を保存
+            var_hashes: dict[str, dict[str, Any]] = {}
+            for name, value in variables.items():
+                try:
+                    data = pickle.dumps(value)
+                    obj_hash = self._store_object(data)
+                    var_hashes[name] = {
+                        "hash": obj_hash,
+                        "type": type(value).__name__,
+                        "size": len(data),
+                    }
+                except Exception as e:
+                    logger.warning(f"Failed to serialize '{name}': {e}")
 
-        # マージコミット情報を作成
-        if message is None:
-            current_branch = self.get_current_branch() or "HEAD"
-            message = i18n.translate("msg.merge_commit", branch_name=branch_name, current_branch=current_branch)
+            # マージコミット情報を作成
+            if message is None:
+                current_branch = self.get_current_branch() or "HEAD"
+                message = i18n.translate("msg.merge_commit", branch_name=branch_name, current_branch=current_branch)
 
-        commit_data = {
-            "message": message,
-            "author": os.environ.get("USER", "unknown"),
-            "timestamp": datetime.now().isoformat(),
-            "parent": current_commit,
-            "merge_parent": merge_commit,
-            "variables": var_hashes,
-        }
+            commit_data = {
+                "message": message,
+                "author": os.environ.get("USER", "unknown"),
+                "timestamp": datetime.now().isoformat(),
+                "parent": current_commit,
+                "merge_parent": merge_commit,
+                "variables": var_hashes,
+            }
 
-        # マージコミットを保存
-        commit_bytes = json.dumps(commit_data, indent=2).encode('utf-8')
-        merge_hash = self._hash_object(commit_bytes)
+            # マージコミットを保存
+            commit_bytes = json.dumps(commit_data, indent=2).encode('utf-8')
+            merge_hash = self._hash_object(commit_bytes)
 
-        commit_path = self.ssm_path / self.COMMITS_DIR / f"{merge_hash}.json"
-        self._write_json(commit_path, commit_data)
+            commit_path = self.ssm_path / self.COMMITS_DIR / f"{merge_hash}.json"
+            self._write_json(commit_path, commit_data)
 
-        # HEADを更新
-        head_file.write_text(merge_hash)
+            # HEADを更新
+            self._write_text_atomic(head_file, merge_hash)
 
-        # ブランチを更新
-        current_branch = self.get_current_branch()
-        if current_branch:
-            branch_file = self.ssm_path / self.BRANCHES_DIR / current_branch
-            branch_file.write_text(merge_hash)
+            # ブランチを更新
+            current_branch = self.get_current_branch()
+            if current_branch:
+                branch_file = self.ssm_path / self.BRANCHES_DIR / current_branch
+                self._write_text_atomic(branch_file, merge_hash)
 
         info_msg = i18n.translate("info.merge_completed", branch_name=branch_name, commit=merge_hash[:7])
         print(f"✓ {info_msg}")
@@ -2276,32 +2357,33 @@ class SSM:
         if not tag_name or not tag_name.replace("_", "").replace("-", "").replace(".", "").isalnum():
             raise ValidationError("tag_name", "Tag name must be alphanumeric with underscores, hyphens, or dots")
 
-        # コミットハッシュを取得
-        if commit_hash is None:
-            head_file = self.ssm_path / self.HEAD_FILE
-            commit_hash = head_file.read_text().strip()
-            if not commit_hash:
-                raise SSMNoCommitsError()
-        else:
-            # 短縮ハッシュを展開
-            try:
-                commit_hash = self._resolve_hash(commit_hash)
-            except ValueError:
-                raise SSMCommitNotFoundError(commit_hash) from None
+        with self._repo_lock():
+            # コミットハッシュを取得
+            if commit_hash is None:
+                head_file = self.ssm_path / self.HEAD_FILE
+                commit_hash = head_file.read_text().strip()
+                if not commit_hash:
+                    raise SSMNoCommitsError()
+            else:
+                # 短縮ハッシュを展開
+                try:
+                    commit_hash = self._resolve_hash(commit_hash)
+                except ValueError:
+                    raise SSMCommitNotFoundError(commit_hash) from None
 
-        # タグファイルを作成
-        tag_file = self.ssm_path / self.TAGS_DIR / tag_name
-        if tag_file.exists():
-            error_msg = i18n.translate("error.tag_already_exists", tag_name=tag_name)
-            raise SSMConfigError(error_msg)
+            # タグファイルを作成
+            tag_file = self.ssm_path / self.TAGS_DIR / tag_name
+            if tag_file.exists():
+                error_msg = i18n.translate("error.tag_already_exists", tag_name=tag_name)
+                raise SSMConfigError(error_msg)
 
-        tag_data = {
-            "commit": commit_hash,
-            "message": message or f"Tag: {tag_name}",
-            "timestamp": datetime.now().isoformat(),
-        }
+            tag_data = {
+                "commit": commit_hash,
+                "message": message or f"Tag: {tag_name}",
+                "timestamp": datetime.now().isoformat(),
+            }
 
-        self._write_json(tag_file, tag_data)
+            self._write_json(tag_file, tag_data)
 
         info_msg = i18n.translate("info.tag_created", tag_name=tag_name, commit=commit_hash[:7])
         print(f"✓ {info_msg}")
@@ -2347,19 +2429,20 @@ class SSM:
         """
         self._ensure_initialized()
 
-        tag_file = self.ssm_path / self.TAGS_DIR / tag_name
-        if not tag_file.exists():
-            raise SSMTagNotFoundError(tag_name)
+        with self._repo_lock():
+            tag_file = self.ssm_path / self.TAGS_DIR / tag_name
+            if not tag_file.exists():
+                raise SSMTagNotFoundError(tag_name)
 
-        tag_data = self._read_json(tag_file)
-        commit_hash = tag_data.get("commit")
+            tag_data = self._read_json(tag_file)
+            commit_hash = tag_data.get("commit")
 
-        if not commit_hash:
-            error_msg = i18n.translate("error.tag_no_commit", tag_name=tag_name)
-            raise SSMConfigError(error_msg)
+            if not commit_hash:
+                error_msg = i18n.translate("error.tag_no_commit", tag_name=tag_name)
+                raise SSMConfigError(error_msg)
 
-        # チェックアウト
-        self.checkout(commit_hash)
+            # チェックアウト（再入可能なロックなのでデッドロックしない）
+            self.checkout(commit_hash)
 
         info_msg = i18n.translate("info.tag_checked_out", tag_name=tag_name, commit=commit_hash[:7])
         print(f"✓ {info_msg}")
@@ -2384,17 +2467,18 @@ class SSM:
         if not name or not name.replace("_", "").replace("-", "").isalnum():
             raise ValidationError("remote_name", "Remote name must be alphanumeric with underscores or hyphens")
 
-        remote_file = self.ssm_path / self.REMOTES_DIR / name
-        if remote_file.exists():
-            error_msg = _get_i18n().translate("error.remote_already_exists", remote_name=name)
-            raise SSMConfigError(error_msg)
+        with self._repo_lock():
+            remote_file = self.ssm_path / self.REMOTES_DIR / name
+            if remote_file.exists():
+                error_msg = _get_i18n().translate("error.remote_already_exists", remote_name=name)
+                raise SSMConfigError(error_msg)
 
-        remote_data = {
-            "url": url,
-            "created_at": datetime.now().isoformat(),
-        }
+            remote_data = {
+                "url": url,
+                "created_at": datetime.now().isoformat(),
+            }
 
-        self._write_json(remote_file, remote_data)
+            self._write_json(remote_file, remote_data)
 
         info_msg = i18n.translate("info.remote_added", name=name, url=url)
         print(f"✓ {info_msg}")
@@ -2442,55 +2526,60 @@ class SSM:
         """
         self._ensure_initialized()
 
-        remote_file = self.ssm_path / self.REMOTES_DIR / remote_name
-        if not remote_file.exists():
-            raise SSMRemoteNotFoundError(remote_name)
+        # ローカル側の HEAD/リモート参照の読み取りと、リモートへの書き込みを
+        # 直列化する（他プロセスの commit/checkout と競合して半端な HEAD を
+        # 読まないように、また複数の push が同時にリモートへ書き込んで
+        # 競合しないように）
+        with self._repo_lock():
+            remote_file = self.ssm_path / self.REMOTES_DIR / remote_name
+            if not remote_file.exists():
+                raise SSMRemoteNotFoundError(remote_name)
 
-        remote_data = self._read_json(remote_file)
-        remote_url = remote_data.get("url")
+            remote_data = self._read_json(remote_file)
+            remote_url = remote_data.get("url")
 
-        if not remote_url:
-            error_msg = i18n.translate("error.remote_no_url", remote_name=remote_name)
-            raise SSMConfigError(error_msg)
+            if not remote_url:
+                error_msg = i18n.translate("error.remote_no_url", remote_name=remote_name)
+                raise SSMConfigError(error_msg)
 
-        # ブランチ名を取得
-        if branch_name is None:
-            branch_name = self.get_current_branch() or "main"
+            # ブランチ名を取得
+            if branch_name is None:
+                branch_name = self.get_current_branch() or "main"
 
-        # 現在のコミットを取得
-        head_file = self.ssm_path / self.HEAD_FILE
-        current_commit = head_file.read_text().strip()
+            # 現在のコミットを取得
+            head_file = self.ssm_path / self.HEAD_FILE
+            current_commit = head_file.read_text().strip()
 
-        if not current_commit:
-            raise SSMNoCommitsError()
+            if not current_commit:
+                raise SSMNoCommitsError()
 
-        # リモートがファイルパスの場合
-        if remote_url.startswith("/") or remote_url.startswith(".") or "://" not in remote_url:
-            remote_path = Path(remote_url)
-            if not remote_path.exists():
-                # リモートリポジトリを初期化
-                from .ssm import SSM
-                remote_ssm = SSM(path=remote_path)
-                remote_ssm.init()
+            # リモートがファイルパスの場合
+            if remote_url.startswith("/") or remote_url.startswith(".") or "://" not in remote_url:
+                remote_path = Path(remote_url)
+                if not remote_path.exists():
+                    # リモートリポジトリを初期化
+                    from .ssm import SSM
+                    remote_ssm = SSM(path=remote_path)
+                    remote_ssm.init()
 
-            # リモートのブランチファイルを更新
-            remote_ssm_path = remote_path / self.SSM_DIR
-            remote_branch_file = remote_ssm_path / self.BRANCHES_DIR / branch_name
-            remote_branch_file.parent.mkdir(parents=True, exist_ok=True)
-            remote_branch_file.write_text(current_commit)
+                # リモートのブランチファイルを更新
+                remote_ssm_path = remote_path / self.SSM_DIR
+                remote_branch_file = remote_ssm_path / self.BRANCHES_DIR / branch_name
+                remote_branch_file.parent.mkdir(parents=True, exist_ok=True)
+                self._write_text_atomic(remote_branch_file, current_commit)
 
-            # コミットとオブジェクトをコピー（簡易版：すべてコピー）
-            self._copy_to_remote(remote_ssm_path)
+                # コミットとオブジェクトをコピー（簡易版：すべてコピー）
+                self._copy_to_remote(remote_ssm_path)
 
-            info_msg = i18n.translate("info.push_completed", remote=remote_name, branch=branch_name, commit=current_commit[:7])
-            print(f"✓ {info_msg}")
-        else:
-            # クラウド/HTTP など URL 形式のリモート（バックエンド経由）
-            self._push_to_backend(remote_url, branch_name, current_commit, password)
-            info_msg = i18n.translate(
-                "info.push_completed", remote=remote_name, branch=branch_name, commit=current_commit[:7]
-            )
-            print(f"✓ {info_msg}")
+                info_msg = i18n.translate("info.push_completed", remote=remote_name, branch=branch_name, commit=current_commit[:7])
+                print(f"✓ {info_msg}")
+            else:
+                # クラウド/HTTP など URL 形式のリモート（バックエンド経由）
+                self._push_to_backend(remote_url, branch_name, current_commit, password)
+                info_msg = i18n.translate(
+                    "info.push_completed", remote=remote_name, branch=branch_name, commit=current_commit[:7]
+                )
+                print(f"✓ {info_msg}")
 
     def pull(
         self,
@@ -2513,73 +2602,76 @@ class SSM:
         """
         self._ensure_initialized()
 
-        remote_file = self.ssm_path / self.REMOTES_DIR / remote_name
-        if not remote_file.exists():
-            raise SSMRemoteNotFoundError(remote_name)
+        # リモート参照の取得からローカル HEAD/branch の更新・checkout()
+        # (再入可能) までを1つの操作として直列化する
+        with self._repo_lock():
+            remote_file = self.ssm_path / self.REMOTES_DIR / remote_name
+            if not remote_file.exists():
+                raise SSMRemoteNotFoundError(remote_name)
 
-        remote_data = self._read_json(remote_file)
-        remote_url = remote_data.get("url")
+            remote_data = self._read_json(remote_file)
+            remote_url = remote_data.get("url")
 
-        if not remote_url:
-            error_msg = i18n.translate("error.remote_no_url", remote_name=remote_name)
-            raise SSMConfigError(error_msg)
-
-        # ブランチ名を取得
-        if branch_name is None:
-            branch_name = self.get_current_branch() or "main"
-
-        # リモートがファイルパスの場合
-        if remote_url.startswith("/") or remote_url.startswith(".") or "://" not in remote_url:
-            remote_path = Path(remote_url)
-            remote_ssm_path = remote_path / self.SSM_DIR
-
-            if not remote_ssm_path.exists():
-                error_msg = i18n.translate("error.remote_repository_not_found", remote_url=remote_url)
+            if not remote_url:
+                error_msg = i18n.translate("error.remote_no_url", remote_name=remote_name)
                 raise SSMConfigError(error_msg)
 
-            # リモートのブランチからコミットを取得
-            remote_branch_file = remote_ssm_path / self.BRANCHES_DIR / branch_name
-            if not remote_branch_file.exists():
-                raise SSMBranchNotFoundError(branch_name)
+            # ブランチ名を取得
+            if branch_name is None:
+                branch_name = self.get_current_branch() or "main"
 
-            remote_commit = remote_branch_file.read_text().strip()
+            # リモートがファイルパスの場合
+            if remote_url.startswith("/") or remote_url.startswith(".") or "://" not in remote_url:
+                remote_path = Path(remote_url)
+                remote_ssm_path = remote_path / self.SSM_DIR
 
-            # コミットとオブジェクトをコピー
-            self._copy_from_remote(remote_ssm_path)
+                if not remote_ssm_path.exists():
+                    error_msg = i18n.translate("error.remote_repository_not_found", remote_url=remote_url)
+                    raise SSMConfigError(error_msg)
 
-            # 現在のブランチを更新
-            current_branch = self.get_current_branch()
-            if current_branch:
-                branch_file = self.ssm_path / self.BRANCHES_DIR / current_branch
-                branch_file.write_text(remote_commit)
+                # リモートのブランチからコミットを取得
+                remote_branch_file = remote_ssm_path / self.BRANCHES_DIR / branch_name
+                if not remote_branch_file.exists():
+                    raise SSMBranchNotFoundError(branch_name)
 
-            # HEADを更新
-            head_file = self.ssm_path / self.HEAD_FILE
-            head_file.write_text(remote_commit)
+                remote_commit = remote_branch_file.read_text().strip()
 
-            # 変数を復元
-            self.checkout(remote_commit)
+                # コミットとオブジェクトをコピー
+                self._copy_from_remote(remote_ssm_path)
 
-            info_msg = i18n.translate("info.pull_completed", remote=remote_name, branch=branch_name, commit=remote_commit[:7])
-            print(f"✓ {info_msg}")
-        else:
-            # クラウド/HTTP など URL 形式のリモート（バックエンド経由）
-            remote_commit = self._pull_from_backend(remote_url, branch_name, password)
+                # 現在のブランチを更新
+                current_branch = self.get_current_branch()
+                if current_branch:
+                    branch_file = self.ssm_path / self.BRANCHES_DIR / current_branch
+                    self._write_text_atomic(branch_file, remote_commit)
 
-            current_branch = self.get_current_branch()
-            if current_branch:
-                branch_file = self.ssm_path / self.BRANCHES_DIR / current_branch
-                branch_file.write_text(remote_commit)
+                # HEADを更新
+                head_file = self.ssm_path / self.HEAD_FILE
+                self._write_text_atomic(head_file, remote_commit)
 
-            head_file = self.ssm_path / self.HEAD_FILE
-            head_file.write_text(remote_commit)
+                # 変数を復元
+                self.checkout(remote_commit)
 
-            self.checkout(remote_commit)
+                info_msg = i18n.translate("info.pull_completed", remote=remote_name, branch=branch_name, commit=remote_commit[:7])
+                print(f"✓ {info_msg}")
+            else:
+                # クラウド/HTTP など URL 形式のリモート（バックエンド経由）
+                remote_commit = self._pull_from_backend(remote_url, branch_name, password)
 
-            info_msg = i18n.translate(
-                "info.pull_completed", remote=remote_name, branch=branch_name, commit=remote_commit[:7]
-            )
-            print(f"✓ {info_msg}")
+                current_branch = self.get_current_branch()
+                if current_branch:
+                    branch_file = self.ssm_path / self.BRANCHES_DIR / current_branch
+                    self._write_text_atomic(branch_file, remote_commit)
+
+                head_file = self.ssm_path / self.HEAD_FILE
+                self._write_text_atomic(head_file, remote_commit)
+
+                self.checkout(remote_commit)
+
+                info_msg = i18n.translate(
+                    "info.pull_completed", remote=remote_name, branch=branch_name, commit=remote_commit[:7]
+                )
+                print(f"✓ {info_msg}")
 
     def _copy_to_remote(self, remote_ssm_path: Path) -> None:
         """リモートにコミットとオブジェクトをコピー（簡易版）"""

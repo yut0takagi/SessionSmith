@@ -9,7 +9,8 @@ SessionSmith カスタム例外クラス
     │   ├── SSMNotInitializedError
     │   ├── SSMCommitNotFoundError
     │   ├── SSMNoCommitsError
-    │   └── SSMConfigError
+    │   ├── SSMConfigError
+    │   └── SSMLockError
     ├── SessionError (セッション操作関連)
     │   ├── SessionSaveError
     │   ├── SessionLoadError
@@ -132,6 +133,40 @@ class SSMRemoteNotFoundError(SSMError):
         i18n = _get_i18n()
         message = i18n.translate("error.remote_not_found", remote_name=remote_name)
         super().__init__(message, details={"remote_name": remote_name})
+
+
+class SSMLockError(SSMError):
+    """`.ssm` リポジトリのプロセス間ロック取得がタイムアウトした場合の例外"""
+
+    def __init__(
+        self,
+        ssm_path: str,
+        holder_pid: Optional[int] = None,
+        timeout: Optional[float] = None,
+    ):
+        self.ssm_path = ssm_path
+        self.holder_pid = holder_pid
+        self.timeout = timeout
+
+        if holder_pid:
+            holder_desc = f"currently held by PID {holder_pid}"
+        else:
+            holder_desc = "holder could not be determined"
+        timeout_desc = f"{timeout:.1f}s" if timeout is not None else "the configured timeout"
+
+        message = (
+            f"Timed out after {timeout_desc} waiting for the lock on '{ssm_path}' "
+            f"({holder_desc}). Another process or thread is likely writing to this "
+            f".ssm repository. If no other process is actually using it, the lock "
+            f"file ('.lock') may be stale from a crashed process; SessionSmith "
+            f"automatically reclaims stale locks once the holder process is "
+            f"confirmed dead or the lock exceeds its max age, so retrying shortly "
+            f"usually resolves this."
+        )
+        super().__init__(
+            message,
+            details={"ssm_path": ssm_path, "holder_pid": holder_pid, "timeout": timeout},
+        )
 
 
 class SSMMergeConflictError(SSMError):
