@@ -67,12 +67,12 @@ jobs:
         working-directory: extension
         run: vsce package
 
-      - name: Publish to VS Code Marketplace
+      - name: Publish to Open VSX
         if: steps.check_tag.outputs.exists == 'false'
         working-directory: extension
         env:
-          VSCE_PAT: ${{ secrets.VSX_ACCESS_TOKEN }}
-        run: vsce publish -p $VSCE_PAT
+          OVSX_PAT: ${{ secrets.VSX_ACCESS_TOKEN }}
+        run: npx --yes ovsx publish *.vsix -p "$OVSX_PAT"
 
       - name: Create and push tag
         if: steps.check_tag.outputs.exists == 'false'
@@ -98,7 +98,7 @@ jobs:
           body: |
             ## VS Code Extension v${{ steps.get_version.outputs.version }}
             
-            Install from [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=yut0takagi.sessionsmith)
+            Install from [Open VSX](https://open-vsx.org/extension/yut0takagi/sessionsmith)
             
             Or download the `.vsix` file and install manually.
         env:
