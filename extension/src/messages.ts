@@ -16,4 +16,5 @@ export type WebviewToHost =
     | { type: 'merge'; branch?: string }
     | { type: 'deleteRef'; kind: 'branch' | 'tag'; name: string }
     | { type: 'renameRef'; kind: 'branch' | 'tag'; name: string }
-    | { type: 'copyHash'; hash: string };
+    | { type: 'copyHash'; hash: string }
+    | { type: 'openInEditor' };

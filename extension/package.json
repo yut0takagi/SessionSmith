@@ -87,6 +87,13 @@
     "views": {
       "sessionsmith": [
         {
+          "id": "sessionsmithGraph",
+          "name": "Session Graph",
+          "type": "webview",
+          "icon": "$(git-commit)",
+          "contextualTitle": "SessionSmith"
+        },
+        {
           "id": "sessionsmithSessions",
           "name": "Sessions",
           "icon": "$(git-commit)",
