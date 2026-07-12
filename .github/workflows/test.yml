@@ -46,7 +46,15 @@ jobs:
       - name: Run tests
         run: |
           pip install -e ".[dev]"
-          pytest tests/ -v --tb=short --timeout=300 -x
+          pytest tests/ -v --tb=short --timeout=300 -x --cov=SessionSmith --cov-report=term-missing --cov-report=xml --cov-fail-under=30
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-xml-${{ matrix.python-version }}
+          path: coverage.xml
+          retention-days: 14
 
   lint:
     runs-on: ubuntu-latest
@@ -61,7 +69,10 @@ jobs:
       - name: Install linters
         run: |
           python -m pip install --upgrade pip
-          pip install ruff mypy
+          # dev extras (mypy/ruff に加え、crypto.py が実際に import する cryptography も含む)
+          # をインストールする。ruff/mypy だけ入れると、gated scope に含まれる crypto.py の
+          # `cryptography` import がスタブ欠如エラーになり CI が誤って壊れるため。
+          pip install -e ".[dev]"
 
       - name: Run ruff
         run: |
@@ -69,5 +80,8 @@ jobs:
 
       - name: Run mypy
         run: |
-          mypy SessionSmith/ --ignore-missing-imports --no-error-summary || true
+          # 公開API + コアモジュール群を対象にした必須ゲート（issue #27）。
+          # 型スタブなしの依存や既存の型エラーが多いモジュールは
+          # pyproject.toml の [[tool.mypy.overrides]] で明示的に除外/緩和している。
+          mypy SessionSmith/
 

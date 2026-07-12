@@ -273,10 +273,10 @@ class AlgorithmTracer:
         self.start()
         return self
 
-    def __exit__(self, exc_type: Optional[type], exc_val: Optional[Exception], exc_tb: Optional[Any]) -> bool:
+    def __exit__(self, exc_type: Optional[type], exc_val: Optional[Exception], exc_tb: Optional[Any]) -> None:
         """コンテキストマネージャーとして使用"""
         self.stop()
-        return False  # 例外を伝播
+        return None  # 例外を伝播
 
     def save(self, file_path: Union[str, Path], format: str = "json") -> None:
         """
