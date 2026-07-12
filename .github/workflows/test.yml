@@ -46,7 +46,15 @@ jobs:
       - name: Run tests
         run: |
           pip install -e ".[dev]"
-          pytest tests/ -v --tb=short --timeout=300 -x
+          pytest tests/ -v --tb=short --timeout=300 -x --cov=SessionSmith --cov-report=term-missing --cov-report=xml --cov-fail-under=30
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-xml-${{ matrix.python-version }}
+          path: coverage.xml
+          retention-days: 14
 
   lint:
     runs-on: ubuntu-latest

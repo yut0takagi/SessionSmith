@@ -156,6 +156,9 @@ python_files = ["test_*.py"]
 python_functions = ["test_*"]
 addopts = "-v --tb=short"
 timeout = 30
+markers = [
+    "timeout: mark a test with a per-test timeout in seconds (requires pytest-timeout)",
+]
 
 [tool.coverage.run]
 source = ["SessionSmith"]

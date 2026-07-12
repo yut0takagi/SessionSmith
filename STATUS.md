@@ -240,8 +240,9 @@ SessionSmithは、Pythonセッション（変数・オブジェクト）をGit�
   - 現在: `test_core.py` (約20テスト), `test_ssm.py` (約79テスト), `test_cli.py` (約10テスト)
   - GitHub Actionsで自動テスト実行（Python 3.9-3.12）
   - カバー範囲: 初期化、コミット、ログ、チェックアウト、設定、例外処理、堅牢性、フォーマット互換性、チェックポイント、大規模データ、スレッド安全性
-- ⚠️ **カバレッジレポートが未生成**
-  - 改善: `pytest-cov`を使用したカバレッジレポートの生成
+- ✅ **カバレッジレポートをCIで生成**
+  - 実装: `pytest-cov`によりCI（`.github/workflows/test.yml`）で`term-missing`/`xml`形式のレポートを生成し、`coverage.xml`をアーティファクトとしてアップロード
+  - `--cov-fail-under=30`で大幅なカバレッジ低下を検知（現状の実測値は約35%）
 - ✅ **v2.1.0 新機能のテストを追加**
   - 暗号化・署名（`test_crypto.py`）、構造化ロギング（`test_logging_config.py`）
   - リモートバックエンドと push/pull 統合（`test_remote_backends.py`）
