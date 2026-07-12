@@ -39,8 +39,10 @@ ssm.log(limit: int = 10, oneline: bool = False) -> List[Dict[str, Any]]
 以前のコミット状態に復元します。
 
 ```python
-ssm.checkout(commit_hash: Optional[str] = None) -> None
+ssm.checkout(commit_hash: Optional[str] = None, clean: bool = False) -> None
 ```
+
+`clean`（デフォルト `False`）: `False` の場合は従来通り、対象コミットに記録された変数で現在のセッション（`globals_dict`）を**上書き・追加するだけ**です。`True` を指定すると、これに加えて「離れる直前のコミット（呼び出し時点の HEAD）には存在したが、対象コミットには存在しない」変数、すなわち `set(現在のコミットの変数) - set(対象コミットの変数)` を `globals_dict` から削除します（git のブランチ切り替えに近い挙動）。SSM が一度も追跡していない変数（コミットされたことがない変数）や、除外リスト・Jupyter 内部変数は削除対象になりません。HEAD が未設定（フレッシュなリポジトリ等）で「離れる前の状態」が特定できない場合、`clean=True` は no-op です。
 
 #### `ssm.status()`
 
@@ -141,8 +143,10 @@ ssm.branch(branch_name: Optional[str] = None, create: bool = False) -> Union[str
 ブランチに切り替えます。
 
 ```python
-ssm.checkout_branch(branch_name: str) -> None
+ssm.checkout_branch(branch_name: str, clean: bool = False) -> None
 ```
+
+`clean` は `ssm.checkout()` の同名引数をそのまま内部の `checkout()` 呼び出しに伝播します（デフォルト `False`）。
 
 #### `ssm.get_current_branch()`
 
@@ -156,13 +160,23 @@ ssm.get_current_branch() -> Optional[str]
 
 指定したブランチを現在のブランチにマージします。共通祖先を検出し、2つの親（現在のHEADとマージ元）を持つマージコミットを作成します。
 
-> ⚠️ 現状のマージは**履歴の統合のみ**で、変数値レベルのコンフリクト検出は行いません。同名変数が両ブランチで異なる場合、マージ時点でセッションに存在する値がそのまま記録されます（last-writer-wins）。`SSMMergeConflictError` は将来の値マージ実装のために予約された例外で、現状は送出されません。
+マージ結果そのものは**履歴の統合のみ**で、変数値レベルの自動マージは行いません。同名変数が両ブランチで異なる場合、マージ呼び出し時点でセッションに存在する値がそのまま記録されます（last-writer-wins）。これは `on_conflict` の値によらず共通です。
 
 ```python
-ssm.merge(branch_name: str, message: Optional[str] = None) -> str
+ssm.merge(branch_name: str, message: Optional[str] = None, on_conflict: str = "warn") -> str
 ```
 
+`on_conflict` は、現在のHEADコミットとマージ元コミットを比較し、共通祖先から見て**両側で**値が変更されている同名変数（コンフリクト）を検出した際の動作を指定します:
+
+| 値 | 動作 |
+|----|------|
+| `"warn"`（デフォルト） | コンフリクトがあれば `warnings.warn()` で変数名を列挙して警告し、通常通りマージを続行する |
+| `"error"` | コンフリクトがあれば `SSMMergeConflictError` を送出する。この場合マージコミットは作成されず、HEAD/ブランチも変更されない |
+| `"ignore"` | コンフリクト検出を行わない（本機能導入前の挙動） |
+
 **戻り値:** マージコミットのハッシュ
+
+**例外:** `on_conflict` に `"warn"` / `"error"` / `"ignore"` 以外の値を指定すると `ValidationError` を送出します。
 
 #### `ssm.tag()`
 
@@ -187,8 +201,10 @@ ssm.list_tags() -> List[Dict[str, Any]]
 タグが指すコミットからチェックアウトします。
 
 ```python
-ssm.checkout_tag(tag_name: str) -> None
+ssm.checkout_tag(tag_name: str, clean: bool = False) -> None
 ```
+
+`clean` は `ssm.checkout()` の同名引数をそのまま内部の `checkout()` 呼び出しに伝播します（デフォルト `False`）。
 
 ### リモート（クラウド / URL 対応）
 
@@ -451,7 +467,7 @@ load_session(
 | `SSMBranchNotFoundError` | ブランチが見つからない |
 | `SSMTagNotFoundError` | タグが見つからない |
 | `SSMRemoteNotFoundError` | リモートが見つからない |
-| `SSMMergeConflictError` | マージコンフリクト（将来の値マージ用に予約。現状は未送出） |
+| `SSMMergeConflictError` | `ssm.merge(..., on_conflict="error")` で、共通祖先から両側で値が変更された同名変数（コンフリクト）が検出された場合に送出 |
 | `SessionError` | セッション操作の基底例外 |
 | `SessionSaveError` | 保存時のエラー |
 | `SessionLoadError` | 読み込み時のエラー |

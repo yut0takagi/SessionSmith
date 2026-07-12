@@ -11,12 +11,20 @@ ssm.py の E2E ワークフローおよびブランチ / マージ / タグ / �
 
 - ``merge()`` は 2 つのブランチの変数を値レベルでマージしない。単に「現在ライブな
   globals_dict の中身」をマージコミットとして記録し、parent / merge_parent の 2 つの
-  親を持たせるだけ。``SSMMergeConflictError``（exceptions.py に定義済み）は
-  ``ssm.py`` のどこからも送出されない（`grep -n SSMMergeConflictError ssm.py` で確認済み）。
-  そのため、同一変数名を両ブランチで異なる値に編集しても例外は発生しない。
-- ``checkout()`` / ``checkout_branch()`` / ``checkout_tag()`` は対象コミットに含まれる
-  変数を globals_dict に上書きするだけで、対象コミットに存在しないキーを削除はしない。
-  そのため、後から追加した変数はブランチを切り替えても居残る。
+  親を持たせるだけ（last-writer-wins）。そのため、同一変数名を両ブランチで異なる値に
+  編集しても、マージコミットの作成自体が失敗することはない。
+  ``merge()`` は ``on_conflict`` 引数（デフォルト "warn"）でコンフリクト検出を
+  追加でサポートする: 共通祖先から見て両側で値が変更された同名変数があれば
+  "warn" は ``warnings.warn()`` で警告するだけでマージを継続し、"error" は
+  ``SSMMergeConflictError`` を送出してマージコミットを作成しない、"ignore" は
+  検出自体を行わない（旧来の挙動）。詳細は tests/test_merge_checkout_features.py
+  を参照。
+- ``checkout()`` / ``checkout_branch()`` / ``checkout_tag()`` は、デフォルト
+  （``clean=False``）では対象コミットに含まれる変数を globals_dict に
+  上書きするだけで、対象コミットに存在しないキーを削除しない。そのため、
+  後から追加した変数はブランチを切り替えても居残る。``clean=True`` を指定
+  した場合のみ、離れる直前に追跡していたが対象コミットには存在しない変数を
+  削除する（tests/test_merge_checkout_features.py 参照）。
 """
 
 import importlib.util
@@ -255,16 +263,18 @@ class TestMergeConflictBehavior:
     """
     マージコンフリクトに関するテスト。
 
-    ``SSMMergeConflictError`` は exceptions.py に定義されているが、``ssm.py`` の
-    ``merge()`` 実装はどこからもこの例外を送出しない（コード全体を grep して確認）。
     ``merge()`` は 2 ブランチの内容を値レベルで比較・マージするのではなく、
     マージを呼び出した時点で「ライブな」globals_dict の中身をそのままマージコミットの
-    内容として記録するだけである。そのため、同一変数名を両ブランチで異なる値に
-    編集しても例外は発生せず、マージ時点で globals_dict に入っている値がそのまま
-    採用される（"ours" 戦略的な振る舞いだが、コンフリクト検出自体が行われない）。
+    内容として記録するだけである（"ours" 戦略的な振る舞い、last-writer-wins）。
+    この記録処理自体は ``on_conflict`` の値によらず変わらない。
 
-    これは実装のギャップと考えられるが、Issue #28 の指示に従い、実装を変更せず
-    「実際の挙動」をここに記録する。
+    [更新] ``on_conflict`` 引数（デフォルト "warn"）の追加により、``merge()`` は
+    共通祖先から見て両側で値が変更された同名変数を検出できるようになった。
+    デフォルトの "warn" では ``warnings.warn()`` で警告するだけで例外は発生
+    しない（本テストが検証しているのはこの「例外が発生しない」という点）。
+    "error" を指定した場合のみ ``SSMMergeConflictError`` が送出され、マージ
+    コミットは作成されない（tests/test_merge_checkout_features.py の
+    ``TestMergeConflictDetection`` を参照）。
     """
 
     @pytest.mark.timeout(10)
@@ -286,8 +296,10 @@ class TestMergeConflictBehavior:
         g["shared"] = "main-value"
         ssm.commit("main diverges")
 
-        # 実際の挙動: 例外は発生しない
-        merge_hash = ssm.merge("feature")
+        # 実際の挙動: 例外は発生しない（デフォルトの on_conflict="warn" は
+        # 警告のみで、マージ自体は継続する）
+        with pytest.warns(UserWarning, match="shared"):
+            merge_hash = ssm.merge("feature")
         assert merge_hash
 
         merge_commit = _read_commit(ssm, merge_hash)
