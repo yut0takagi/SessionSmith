@@ -347,6 +347,7 @@ export class SessionGraphPanel {
     <div id="toolbar">
         <span id="title">SessionSmith</span>
         <span id="current-branch" class="badge"></span>
+        <input id="search" type="search" placeholder="🔍 search commits, vars, refs…" />
         <span class="spacer"></span>
         <button id="btn-commit" title="現在のセッションをコミット">＋ Commit</button>
         <button id="btn-refresh" title="再読み込み">⟳ Refresh</button>
