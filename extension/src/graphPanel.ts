@@ -351,9 +351,12 @@ export class SessionGraphPanel {
         <span class="spacer"></span>
         <button id="btn-commit" title="現在のセッションをコミット">＋ Commit</button>
         <button id="btn-refresh" title="再読み込み">⟳ Refresh</button>
+        <button id="btn-fit" title="全体表示">⊡ Fit</button>
+        <button id="btn-reset" title="等倍にリセット">1:1</button>
     </div>
     <div id="container">
         <div id="graph-pane"><svg id="graph"></svg></div>
+        <div id="splitter"></div>
         <div id="detail-pane"><div class="placeholder">コミットを選択してください</div></div>
     </div>
     <div id="status"></div>
