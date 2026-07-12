@@ -11,6 +11,10 @@ SessionSmithのCursor/VSCode拡張機能です。Jupyter NotebookやPythonファ
   - コミットをクリックで詳細（変数一覧・型・サイズ・署名状態・親）を表示
   - GUI から **Checkout / Branch here / Tag here / Commit** を実行（Notebook/ターミナルに送信）
   - `.ssm/` の変更を監視して自動更新
+- **v0.3.0 の新機能**:
+  - ズーム / パン、横断検索（メッセージ・ハッシュ・author・変数名）
+  - GUI から **merge**、ブランチ / タグの **削除・リネーム**
+  - リサイズ可能な詳細ペイン、空状態オンボーディング、テーマ整合の刷新
 - **🗂 Sessions ビュー（NEW in v0.2.0）**: アクティビティバーにブランチ・タグ・コミットのツリーを表示
 - **Save Session**: 現在のPythonセッション（変数）を保存
 - **Load Session**: セッションファイルを選択して変数を復元
