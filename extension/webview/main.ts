@@ -43,6 +43,16 @@ function draw(): void {
     lastSize = { width: res.width, height: res.height };
     lastRowY = res.rowY;
     zoomPan.apply();
+    svg.querySelectorAll<SVGRectElement>('[data-ref-kind]').forEach((rect) => {
+        const kind = rect.getAttribute('data-ref-kind');
+        const name = rect.getAttribute('data-ref-name');
+        if (kind === 'head' || !name || (kind !== 'branch' && kind !== 'tag')) return;
+        rect.style.cursor = 'context-menu';
+        rect.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            showRefMenu(e.clientX, e.clientY, kind, name);
+        });
+    });
     const sel = graph.commits.find((c) => c.hash === st.selectedHash);
     renderDetail(detailPane, sel, graph, {
         checkout: (h) => vscode.postMessage({ type: 'checkout', hash: h }),
@@ -55,6 +65,29 @@ function draw(): void {
         `${graph.commits.length} commits · ${graph.branches.length} branches · ${graph.tags.length} tags`,
         false
     );
+}
+
+function showRefMenu(cx: number, cy: number, kind: 'branch' | 'tag', name: string): void {
+    document.getElementById('ref-menu')?.remove();
+    const menu = document.createElement('div');
+    menu.id = 'ref-menu';
+    menu.className = 'context-menu';
+    menu.style.left = cx + 'px';
+    menu.style.top = cy + 'px';
+    menu.innerHTML = `<div class="ctx-title">${kind}: ${name}</div>
+        <button data-a="rename">✎ リネーム</button>
+        <button data-a="delete">🗑 削除</button>`;
+    document.body.appendChild(menu);
+    const close = () => menu.remove();
+    menu.querySelector('[data-a="rename"]')?.addEventListener('click', () => {
+        vscode.postMessage({ type: 'renameRef', kind, name });
+        close();
+    });
+    menu.querySelector('[data-a="delete"]')?.addEventListener('click', () => {
+        vscode.postMessage({ type: 'deleteRef', kind, name });
+        close();
+    });
+    setTimeout(() => window.addEventListener('click', close, { once: true }), 0);
 }
 
 window.addEventListener('message', (event: MessageEvent<HostToWebview>) => {
