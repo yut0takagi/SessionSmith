@@ -73,7 +73,6 @@ export function renderGraph(
             class: 'commit-row-bg' + (c.hash === selectedHash ? ' selected' : '') + (dim(c) ? ' dim' : ''),
             'data-hash': c.hash,
         });
-        bg.addEventListener('click', () => onSelect(c.hash));
         svg.appendChild(bg);
     });
 
@@ -126,5 +125,16 @@ export function renderGraph(
         svg.appendChild(hit);
     });
 
-    return { rowY, width: graphWidth, height: totalHeight };
+    // 実際のコンテンツ幅（テキスト・refバッジ含む）を測って width に反映する。
+    // getBBox はレイアウト前などに失敗し得るので graphWidth をフォールバックにする。
+    let contentWidth = graphWidth;
+    try {
+        const bb = svg.getBBox();
+        contentWidth = Math.max(graphWidth, Math.ceil(bb.x + bb.width + 12));
+    } catch {
+        /* getBBox 不可時は graphWidth を使う */
+    }
+    svg.setAttribute('width', String(contentWidth));
+
+    return { rowY, width: contentWidth, height: totalHeight };
 }
