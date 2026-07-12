@@ -234,14 +234,62 @@ class TestStaleLockRecovery:
         # いっぱいまで待たされてはいけない = ハングしていないことの確認）
         assert elapsed < 3.0, f"stale lock was not reclaimed promptly (took {elapsed:.2f}s)"
 
-    @pytest.mark.timeout(15)
-    def test_stale_lock_by_age_is_reclaimed(self, tmp_path, monkeypatch):
+    @pytest.mark.timeout(20)
+    @pytest.mark.skipif(
+        sys.platform == "win32",
+        reason="生存確認 (os.kill(pid, 0)) は POSIX 前提",
+    )
+    def test_alive_holder_is_NOT_stolen_even_when_old(self, tmp_path):
         """
-        PIDの生死が判定できない場合（Windows、または権限で確認できない場合）の
+        回帰テスト（Critical）: 生存が確認できる保持者のロックは、mtime が
+        STALE_LOCK_MAX_AGE を超えて古くても、絶対に横取り（reclaim）されず、
+        待機側は SSMLockError（タイムアウト）になること。
+
+        修正前の実装では「dead でない=age判定に落ちる」ため、120秒を超える
+        正当な保持者（大きな pull/merge/checkpoint）のロックが別プロセスに
+        奪われ、.ssm が破損し得た。これはそのシナリオの回帰テスト。
+        （修正前の locking.py では reclaim され、SSMLockError が上がらず fail する）
+        """
+        ssm_dir = tmp_path / ".ssm"
+        ssm_dir.mkdir()
+        lock_path = ssm_dir / LOCK_FILENAME
+
+        # 実際に生存している「別プロセス」の PID を保持者にする。
+        # （自PIDだと own-PID 残骸として正当に回収されてしまうため使わない）
+        holder = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
+        try:
+            lock_path.write_text(
+                json.dumps({"pid": holder.pid, "started_at": time.time()}),
+                encoding="utf-8",
+            )
+            # mtime を STALE_LOCK_MAX_AGE より十分古くする（age reclaim を誘発する条件）
+            old_time = time.time() - (locking.STALE_LOCK_MAX_AGE + 60)
+            os.utime(lock_path, (old_time, old_time))
+
+            # 生存中の正当な保持者がいるので reclaim されず、短いタイムアウトで失敗するはず
+            with pytest.raises(SSMLockError) as exc_info:
+                with ProcessLock(ssm_dir, timeout=0.5):
+                    pass  # pragma: no cover - ここに来たら横取り（バグ）
+
+            # 保持者 PID が診断メッセージに反映されていること
+            assert exc_info.value.holder_pid == holder.pid
+            # 横取りされていない = ロックファイルがそのまま残っていること
+            assert lock_path.exists()
+            info = json.loads(lock_path.read_text(encoding="utf-8"))
+            assert info["pid"] == holder.pid
+        finally:
+            holder.terminate()
+            holder.wait(timeout=5)
+
+    @pytest.mark.timeout(15)
+    def test_stale_lock_by_age_is_reclaimed_when_liveness_unknown(self, tmp_path, monkeypatch):
+        """
+        保持者の生死が判定できない場合（Windows、PID不明、権限で確認不可 等）の
         フォールバックである「年齢ベースのヒューリスティック」を検証する。
-        自分自身の（生きている）PIDを保持者として記録しつつ、ファイルの
-        mtime だけを古くすることで、PID生死判定に依存せず stale と判定
-        されることを確認する。
+
+        生死が判定できない状況を模すため、保持者 PID を記録しない
+        （pid 不明 → liveness=unknown）ロックファイルを使い、mtime だけを
+        古くする。この unknown 経路でのみ age reclaim が適用される。
         """
         ssm_dir = tmp_path / ".ssm"
         ssm_dir.mkdir()
@@ -249,9 +297,9 @@ class TestStaleLockRecovery:
 
         monkeypatch.setattr(locking, "STALE_LOCK_MAX_AGE", 0.2)
 
-        # 保持者は自分自身の PID（=生きている）だが、ファイルは十分古い
+        # PID を記録しない → 生死判定不能（unknown）
         lock_path.write_text(
-            json.dumps({"pid": os.getpid(), "started_at": time.time()}), encoding="utf-8"
+            json.dumps({"started_at": time.time()}), encoding="utf-8"
         )
         old_time = time.time() - 10
         os.utime(lock_path, (old_time, old_time))
@@ -262,6 +310,34 @@ class TestStaleLockRecovery:
         elapsed = time.monotonic() - start
 
         assert elapsed < 3.0, f"aged-out stale lock was not reclaimed promptly (took {elapsed:.2f}s)"
+
+    @pytest.mark.timeout(15)
+    @pytest.mark.skipif(
+        sys.platform == "win32",
+        reason="own-PID 残骸の回収は POSIX/Windows 共通だが subprocess 制御を簡潔にするため POSIX で検証",
+    )
+    def test_own_pid_remnant_is_reclaimed_no_self_lockout(self, tmp_path):
+        """
+        自プロセスの PID を保持者とする残骸ロック（前回の release で unlink に
+        失敗して残った等）は、自己ロックアウトを避けるため即座に回収されること。
+        自PIDは生存しているため、生存判定ベースだと 120s 待たされてしまうが、
+        own-PID 残骸として即回収されるべき。
+        """
+        ssm_dir = tmp_path / ".ssm"
+        ssm_dir.mkdir()
+        lock_path = ssm_dir / LOCK_FILENAME
+
+        # 自PID（=生存中）＋新しい mtime。age では reclaim されない条件。
+        lock_path.write_text(
+            json.dumps({"pid": os.getpid(), "started_at": time.time()}), encoding="utf-8"
+        )
+
+        start = time.monotonic()
+        with ProcessLock(ssm_dir, timeout=5.0):
+            pass
+        elapsed = time.monotonic() - start
+
+        assert elapsed < 3.0, f"own-PID remnant caused self-lockout (took {elapsed:.2f}s)"
 
 
 class TestReentrancy:
@@ -316,3 +392,63 @@ class TestReentrancy:
         local.pull("origin", "main")
 
         assert local.globals_dict.get("a") == 1
+
+
+class TestEnterExceptionSafety:
+    """__enter__ が途中で BaseException を受けても RLock をリークしないことのテスト"""
+
+    @pytest.mark.timeout(10)
+    def test_keyboardinterrupt_during_os_lock_does_not_leak_rlock(self, tmp_path, monkeypatch):
+        """
+        OS ロック取得の最中に KeyboardInterrupt（signal handler 経由で
+        commit 中などに発生し得る）が飛んでも、確保済みの RLock が解放され、
+        同じ .ssm パスへの以降の取得が詰まらないことを確認する。
+
+        修正前は OS ロック取得サブステップだけ try/except していたが、
+        カウント操作等の周辺で BaseException が起きると __exit__ が呼ばれず
+        RLock が永久リークし得た。
+        """
+        ssm_dir = tmp_path / ".ssm"
+        ssm_dir.mkdir()
+
+        # _acquire_os_lock の内部で KeyboardInterrupt を注入する
+        real_acquire = ProcessLock._acquire_os_lock
+
+        def boom(self, deadline):
+            raise KeyboardInterrupt("injected mid-acquire")
+
+        monkeypatch.setattr(ProcessLock, "_acquire_os_lock", boom)
+
+        with pytest.raises(KeyboardInterrupt):
+            with ProcessLock(ssm_dir, timeout=2.0):
+                pass  # pragma: no cover
+
+        # 注入を解除し、同じパスへ再取得できること（RLock がリークしていない）を確認
+        monkeypatch.setattr(ProcessLock, "_acquire_os_lock", real_acquire)
+
+        acquired = []
+
+        def worker():
+            with ProcessLock(ssm_dir, timeout=3.0):
+                acquired.append(True)
+
+        t = threading.Thread(target=worker)
+        t.start()
+        t.join(timeout=5.0)
+        assert not t.is_alive(), "RLock leaked: subsequent acquisition hung"
+        assert acquired == [True]
+
+    @pytest.mark.timeout(10)
+    def test_processlock_released_after_exception_inside_block(self, tmp_path):
+        """with ブロック内で例外が出ても、ロックは解放され再取得できること"""
+        ssm_dir = tmp_path / ".ssm"
+        ssm_dir.mkdir()
+
+        with pytest.raises(ValueError):
+            with ProcessLock(ssm_dir, timeout=2.0):
+                raise ValueError("boom")
+
+        # 再取得できる（ロックファイルも残っていない）
+        assert not (ssm_dir / LOCK_FILENAME).exists()
+        with ProcessLock(ssm_dir, timeout=2.0):
+            pass
