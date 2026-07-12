@@ -53,7 +53,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "error.remote_no_url": "リモート '{remote_name}' にURLが設定されていません",
         "error.remote_repository_not_found": "リモートリポジトリが見つかりません: {remote_url}",
         "error.tag_no_commit": "タグ '{tag_name}' にコミットが設定されていません",
-        "error.merge_conflict": "マージコンフリクトが発生しました: ブランチ '{branch_name}' で {count} 個のコンフリクト",
+        "error.merge_conflict": "マージコンフリクトが発生しました: ブランチ '{branch_name}' で {count} 個のコンフリクト ({vars})",
 
         # 警告メッセージ
         "warn.large_variable": "大きな変数が検出されました: '{name}' ({size_mb:.1f}MB)",
@@ -62,6 +62,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "warn.checkpoint_failed": "チェックポイントの保存に失敗しました: {reason}",
         "warn.continuous_mode_unavailable": "常時記録モードはJupyter/IPython環境でのみ利用可能です",
         "warn.variable_conflict": "変数名の衝突が検出されました: ファイル '{previous_file}' と '{current_file}' で同じ変数名 ({vars}) が使用されています。複数のファイルから同じ変数名を使用する場合は注意してください。",
+        "warn.merge_conflict": "マージコンフリクトを検出しました: ブランチ '{branch_name}' で変数 {vars} が共通祖先から両側で異なる値に変更されています。マージ呼び出し時点でセッションに存在する値が採用されます（last-writer-wins）。",
 
         # 情報メッセージ
         "info.session_saved": "セッションを保存しました: {file_path} ({size:,} bytes, 形式: {format})",
@@ -122,7 +123,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "error.remote_no_url": "Remote '{remote_name}' has no URL",
         "error.remote_repository_not_found": "Remote repository not found: {remote_url}",
         "error.tag_no_commit": "Tag '{tag_name}' has no commit",
-        "error.merge_conflict": "Merge conflict: {count} conflicts in branch '{branch_name}'",
+        "error.merge_conflict": "Merge conflict: {count} conflicts in branch '{branch_name}' ({vars})",
 
         # Warning messages
         "warn.large_variable": "Large variable detected: '{name}' ({size_mb:.1f}MB)",
@@ -131,6 +132,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "warn.checkpoint_failed": "Checkpoint save failed: {reason}",
         "warn.continuous_mode_unavailable": "Continuous mode is only available in Jupyter/IPython environment",
         "warn.variable_conflict": "Variable name conflict detected: same variable names ({vars}) used in '{previous_file}' and '{current_file}'. Be careful when using the same variable names from multiple files.",
+        "warn.merge_conflict": "Merge conflict detected: variables {vars} were changed differently on both sides since the common ancestor in branch '{branch_name}'. The value currently in the session at merge time will be used (last-writer-wins).",
         "warn.disk_warning": "Disk space warning: {usage_percent:.1f}% used ({free_mb:.1f}MB free)",
         "warn.disk_critical": "Disk space critical: {usage_percent:.1f}% used ({free_mb:.1f}MB free)",
         "warn.memory_warning": "Memory usage warning: {usage_percent:.1f}% used ({used_mb:.1f}MB used, {available_mb:.1f}MB available)",

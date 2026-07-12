@@ -176,7 +176,14 @@ class SSMMergeConflictError(SSMError):
         self.branch_name = branch_name
         self.conflicts = conflicts
         i18n = _get_i18n()
-        message = i18n.translate("error.merge_conflict", branch_name=branch_name, count=len(conflicts))
+        # コンフリクトした変数名をメッセージ本文にも含める（呼び出し側が
+        # str(exc) だけを見ても、どの変数が衝突したか分かるようにするため）
+        message = i18n.translate(
+            "error.merge_conflict",
+            branch_name=branch_name,
+            count=len(conflicts),
+            vars=", ".join(conflicts),
+        )
         super().__init__(message, details={"branch_name": branch_name, "conflicts": conflicts})
 
 

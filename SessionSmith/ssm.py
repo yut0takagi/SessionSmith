@@ -41,6 +41,7 @@ from .exceptions import (
     SSMCommitNotFoundError,
     SSMConfigError,
     SSMError,
+    SSMMergeConflictError,
     SSMNoCommitsError,
     SSMNotInitializedError,
     SSMRemoteNotFoundError,
@@ -1286,12 +1287,22 @@ class SSM:
 
         return commits
 
-    def checkout(self, commit_hash: Optional[str] = None) -> None:
+    def checkout(self, commit_hash: Optional[str] = None, clean: bool = False) -> None:
         """
         以前のコミット状態に復元
 
         Args:
             commit_hash: コミットハッシュ（短縮形可）
+            clean: True の場合、復元後に「離れる直前の状態（呼び出し時点の
+                HEAD が指すコミット）で追跡されていたが、復元先のコミットには
+                存在しない」変数を globals_dict から削除する（デフォルト:
+                False = 従来通り、対象コミットの変数で上書き・追加するのみで
+                削除は行わない）。呼び出し時点で HEAD が空（フレッシュな
+                リポジトリ等、「離れる前の状態」が特定できない場合）は
+                clean=True でも何も削除しない（no-op）。
+                git-like な挙動: SSM が追跡していなかった（一度もコミットに
+                含まれたことがない）変数や、除外リスト・Jupyter内部変数は
+                対象外で、常にセッションに残る。
 
         Raises:
             SSMNotInitializedError: SSMが初期化されていない場合
@@ -1305,10 +1316,19 @@ class SSM:
         # する。同一スレッドから checkout_branch() 等が既にロックを保持した
         # 状態で呼ばれても、ProcessLock は再入可能なのでデッドロックしない。
         with self._repo_lock():
+            # clean=True のために、このチェックアウトで「離れる」直前の
+            # コミット（現時点の HEAD）を、対象コミットを解決する前に読んで
+            # おく。commit_hash が明示指定される通常の呼び出しでは HEAD は
+            # まだ書き換えられていないため、これが「以前追跡していたコミット」
+            # を正しく表す（checkout_branch() は HEAD 更新前にこの checkout()
+            # を呼ぶよう順序が調整されているため、ブランチ切り替え経由でも
+            # 同様に正しい）。
+            head_file = self.ssm_path / self.HEAD_FILE
+            previous_commit_hash = head_file.read_text().strip() if head_file.exists() else ""
+
             if commit_hash is None:
                 # HEADのコミットを復元
-                head_file = self.ssm_path / self.HEAD_FILE
-                commit_hash = head_file.read_text().strip()
+                commit_hash = previous_commit_hash
                 if not commit_hash:
                     logger.error("No commits to checkout")
                     raise SSMNoCommitsError()
@@ -1326,13 +1346,14 @@ class SSM:
                 raise SSMCommitNotFoundError(commit_hash)
 
             commit_data = self._read_json(commit_path)
+            target_vars = commit_data.get("variables", {})
 
             # 変数を復元
             globals_dict = self._get_globals_dict(depth=3)
             restored = 0
             failed = 0
 
-            for name, var_info in commit_data.get("variables", {}).items():
+            for name, var_info in target_vars.items():
                 try:
                     data = self._load_object(var_info["hash"])
                     value = pickle.loads(data)
@@ -1344,12 +1365,42 @@ class SSM:
                     logger.warning(f"Failed to restore '{name}': {e}")
                     warnings.warn(f"Failed to restore '{name}': {e}", stacklevel=2)
 
+            # clean=True: 以前のSSM状態には存在したが、対象コミットには
+            # 存在しない変数を globals_dict から削除する
+            removed = 0
+            if clean and previous_commit_hash and previous_commit_hash != full_hash:
+                previous_commit_path = self.ssm_path / self.COMMITS_DIR / f"{previous_commit_hash}.json"
+                if previous_commit_path.exists():
+                    previous_vars = self._read_json(previous_commit_path).get("variables", {})
+                    names_to_remove = set(previous_vars) - set(target_vars)
+
+                    # 除外リスト（config の exclude）と Jupyter 内部変数の
+                    # 判定ロジックを再利用し、万一まぎれ込んでいても
+                    # 保護対象の名前は削除しない（実際には、削除候補は元々
+                    # コミットに保存された＝一度は _get_saveable_vars() の
+                    # フィルタを通った変数名なので、通常は該当しない）
+                    try:
+                        config = self._read_json(self.ssm_path / self.CONFIG_FILE)
+                        exclude = set(config.get("exclude", []))
+                    except Exception:
+                        exclude = set(self._default_exclude)
+
+                    for name in names_to_remove:
+                        if name in exclude or is_jupyter_internal_var(name):
+                            continue
+                        if name in globals_dict:
+                            del globals_dict[name]
+                            removed += 1
+                            logger.debug(f"Removed stale variable (clean checkout): {name}")
+
         logger.info(f"Restored {restored} variables from {full_hash[:7]}")
         info_msg = i18n.translate("info.variables_restored", restored=restored, short_hash=full_hash[:7])
         print(f"✓ {info_msg}")
         if failed > 0:
             warn_msg = i18n.translate("warn.partial_load", loaded=restored, total=restored + failed)
             print(f"  ⚠️ {warn_msg}")
+        if clean and removed > 0:
+            print(f"  ✓ Removed {removed} stale variable(s) not present in target commit")
 
     def _is_full_hash_candidate(self, value: str) -> bool:
         """`value` が完全な長さの16進数ハッシュに見えるかを判定する"""
@@ -2215,12 +2266,15 @@ class SSM:
                 raise SSMBranchNotFoundError(branch_name)
             return branch_name
 
-    def checkout_branch(self, branch_name: str) -> None:
+    def checkout_branch(self, branch_name: str, clean: bool = False) -> None:
         """
         ブランチに切り替え
 
         Args:
             branch_name: 切り替えるブランチ名
+            clean: checkout() の同名引数をそのまま伝播する（デフォルト:
+                False）。True の場合、切り替え先ブランチのコミットには
+                存在しない「以前追跡していた」変数を globals_dict から削除する
 
         Raises:
             SSMNotInitializedError: SSMが初期化されていない場合
@@ -2242,6 +2296,15 @@ class SSM:
             # ブランチのコミットを取得
             commit_hash = branch_file.read_text().strip()
 
+            # 変数を復元（ProcessLock は再入可能なのでここでデッドロックしない）。
+            # HEAD/config の更新より前に行う: clean=True のとき、checkout()
+            # 内部が「離れる直前の状態」を HEAD から正しく読み取れるように
+            # するため（先に HEAD を書き換えてしまうと「以前追跡していた
+            # コミット」を特定できなくなる）。commit_hash は常に明示指定
+            # されるため、この並び替えは clean=False の場合の挙動には
+            # 影響しない（従来と完全に同一）。
+            self.checkout(commit_hash, clean=clean)
+
             # HEADを更新
             head_file = self.ssm_path / self.HEAD_FILE
             self._write_text_atomic(head_file, commit_hash)
@@ -2250,9 +2313,6 @@ class SSM:
             config = self._read_json(self.ssm_path / self.CONFIG_FILE)
             config["current_branch"] = branch_name
             self._write_json(self.ssm_path / self.CONFIG_FILE, config)
-
-            # 変数を復元（ProcessLock は再入可能なのでここでデッドロックしない）
-            self.checkout(commit_hash)
 
         info_msg = i18n.translate("info.branch_checked_out", branch_name=branch_name)
         print(f"✓ {info_msg}")
@@ -2271,13 +2331,30 @@ class SSM:
 
     # ========== マージ機能 ==========
 
-    def merge(self, branch_name: str, message: Optional[str] = None) -> str:
+    def merge(
+        self,
+        branch_name: str,
+        message: Optional[str] = None,
+        on_conflict: str = "warn",
+    ) -> str:
         """
         ブランチを現在のブランチにマージ
+
+        マージ結果自体は従来通り「マージ呼び出し時点でライブな globals_dict の
+        中身」を2つの親（現在のHEADとマージ元）を持つマージコミットとして
+        記録するだけで、値レベルでの自動マージは行わない
+        （last-writer-wins）。`on_conflict` はこの記録処理そのものを変えず、
+        あくまで「コンフリクトの検出・通知」だけを追加する。
 
         Args:
             branch_name: マージするブランチ名
             message: マージコミットメッセージ（Noneの場合は自動生成）
+            on_conflict: コンフリクト検出時の動作（デフォルト: "warn"）
+                - "ignore": 検出を行わない（コンフリクト検出導入前の挙動）
+                - "warn": コンフリクトがあれば `warnings.warn()` で警告した上で
+                  通常通りマージを続行する
+                - "error": コンフリクトがあれば `SSMMergeConflictError` を送出し、
+                  マージコミットを作成しない（HEAD/ブランチも変更しない）
 
         Returns:
             str: マージコミットのハッシュ
@@ -2285,10 +2362,20 @@ class SSM:
         Raises:
             SSMNotInitializedError: SSMが初期化されていない場合
             SSMConfigError: ブランチが存在しない場合
+            ValidationError: on_conflict に無効な値を指定した場合
+            SSMMergeConflictError: on_conflict="error" でコンフリクトが検出された場合
         """
         self._ensure_initialized()
 
         branch_name = validate_ref_name(branch_name, "branch_name")
+
+        valid_on_conflict = ("ignore", "warn", "error")
+        if on_conflict not in valid_on_conflict:
+            raise ValidationError(
+                "on_conflict",
+                f"on_conflict must be one of {valid_on_conflict}, got: {on_conflict!r}",
+                on_conflict,
+            )
 
         with self._repo_lock():
             # マージ元のブランチを取得
@@ -2314,7 +2401,41 @@ class SSM:
                 return current_commit
 
             # 2つのコミットの共通祖先を探す（簡易版：最初の共通コミット）
-            self._find_common_ancestor(current_commit, merge_commit)
+            ancestor_commit = self._find_common_ancestor(current_commit, merge_commit)
+
+            # コンフリクト検出（on_conflict="ignore" の場合は行わない）。
+            # マージコミットの作成より前に行うことで、"error" 時にコミットや
+            # HEAD/ブランチ更新が一切発生しないようにする
+            if on_conflict != "ignore":
+                current_commit_data = self._read_json(
+                    self.ssm_path / self.COMMITS_DIR / f"{current_commit}.json"
+                )
+                merge_commit_data = self._read_json(
+                    self.ssm_path / self.COMMITS_DIR / f"{merge_commit}.json"
+                )
+                ancestor_vars: Optional[dict[str, dict[str, Any]]] = None
+                if ancestor_commit:
+                    ancestor_path = self.ssm_path / self.COMMITS_DIR / f"{ancestor_commit}.json"
+                    if ancestor_path.exists():
+                        ancestor_vars = self._read_json(ancestor_path).get("variables", {})
+
+                conflicts = self._detect_merge_conflicts(
+                    current_commit_data.get("variables", {}),
+                    merge_commit_data.get("variables", {}),
+                    ancestor_vars,
+                )
+
+                if conflicts:
+                    if on_conflict == "error":
+                        raise SSMMergeConflictError(branch_name, conflicts)
+                    # on_conflict == "warn"
+                    warn_msg = i18n.translate(
+                        "warn.merge_conflict",
+                        branch_name=branch_name,
+                        vars=", ".join(conflicts),
+                    )
+                    warnings.warn(warn_msg, UserWarning, stacklevel=2)
+                    print(f"⚠ {warn_msg}")
 
             # マージコミットを作成（2つの親を持つ）
             globals_dict = self._get_globals_dict(depth=3)
@@ -2413,6 +2534,60 @@ class SSM:
 
         return None
 
+    def _detect_merge_conflicts(
+        self,
+        current_vars: dict[str, dict[str, Any]],
+        merge_vars: dict[str, dict[str, Any]],
+        ancestor_vars: Optional[dict[str, dict[str, Any]]],
+    ) -> list[str]:
+        """
+        マージしようとしている2つのコミット間のコンフリクトを検出する。
+
+        3-way 比較を採用: 共通祖先コミット（`_find_common_ancestor()` の
+        結果）の変数値を基準に、現在のHEAD側とマージ元ブランチ側の
+        「両方」が祖先から値（オブジェクトハッシュ）を変更しており、かつ
+        両者の最終的な値が食い違っている変数だけをコンフリクトとみなす。
+        片方だけが祖先から変更した場合（もう片方は祖先のまま）は、変更が
+        単純に伝播するだけで衝突とは言えないため対象外とする。
+
+        共通祖先が見つからない場合（履歴が独立している等）は祖先側の情報が
+        得られないため、2-way 比較にフォールバックする: 両方のコミットに
+        存在し、かつオブジェクトハッシュが異なる変数はすべてコンフリクト
+        として扱う。
+
+        Args:
+            current_vars: 現在のHEADコミットの variables マップ
+                （変数名 -> {"hash": ..., ...}）
+            merge_vars: マージ元コミットの variables マップ
+            ancestor_vars: 共通祖先コミットの variables マップ
+                （共通祖先が見つからない場合は None）
+
+        Returns:
+            list[str]: コンフリクトしている変数名のソート済みリスト
+        """
+        conflicts = []
+
+        for name in set(current_vars) & set(merge_vars):
+            current_hash = current_vars[name].get("hash")
+            merge_hash = merge_vars[name].get("hash")
+
+            if current_hash == merge_hash:
+                continue  # 両ブランチで同じ値 → コンフリクトなし
+
+            if ancestor_vars is None:
+                # 共通祖先が特定できない: 2-way 判定にフォールバック
+                conflicts.append(name)
+                continue
+
+            ancestor_hash = ancestor_vars.get(name, {}).get("hash")
+            changed_on_current = current_hash != ancestor_hash
+            changed_on_merge = merge_hash != ancestor_hash
+
+            if changed_on_current and changed_on_merge:
+                conflicts.append(name)
+
+        return sorted(conflicts)
+
     # ========== タグ機能 ==========
 
     def tag(self, tag_name: str, commit_hash: Optional[str] = None, message: Optional[str] = None) -> str:
@@ -2498,12 +2673,15 @@ class SSM:
 
         return sorted(tags, key=lambda x: x["timestamp"] or "", reverse=True)
 
-    def checkout_tag(self, tag_name: str) -> None:
+    def checkout_tag(self, tag_name: str, clean: bool = False) -> None:
         """
         タグからチェックアウト
 
         Args:
             tag_name: タグ名
+            clean: checkout() の同名引数をそのまま伝播する（デフォルト:
+                False）。True の場合、対象コミットには存在しない
+                「以前追跡していた」変数を globals_dict から削除する
 
         Raises:
             SSMNotInitializedError: SSMが初期化されていない場合
@@ -2528,7 +2706,7 @@ class SSM:
                 raise SSMConfigError(error_msg)
 
             # チェックアウト（再入可能なロックなのでデッドロックしない）
-            self.checkout(commit_hash)
+            self.checkout(commit_hash, clean=clean)
 
         info_msg = i18n.translate("info.tag_checked_out", tag_name=tag_name, commit=commit_hash[:7])
         print(f"✓ {info_msg}")
@@ -2970,9 +3148,9 @@ def log(limit: int = 10, oneline: bool = False) -> list[dict[str, Any]]:
     return _get_ssm().log(limit, oneline)
 
 
-def checkout(commit_hash: Optional[str] = None) -> None:
-    """以前のコミット状態に復元"""
-    _get_ssm().checkout(commit_hash)
+def checkout(commit_hash: Optional[str] = None, clean: bool = False) -> None:
+    """以前のコミット状態に復元（clean=True で対象コミットに無い旧変数を削除）"""
+    _get_ssm().checkout(commit_hash, clean=clean)
 
 
 def status() -> dict[str, Any]:
@@ -3238,18 +3416,20 @@ def branch(branch_name: Optional[str] = None, create: bool = False) -> Union[str
     return _get_ssm().branch(branch_name, create)
 
 
-def checkout_branch(branch_name: str) -> None:
+def checkout_branch(branch_name: str, clean: bool = False) -> None:
     """
     ブランチに切り替え
 
     Args:
         branch_name: 切り替えるブランチ名
+        clean: True の場合、切り替え先ブランチのコミットに存在しない
+            「以前追跡していた」変数を globals から削除する（デフォルト: False）
 
     Example:
         >>> from SessionSmith import ssm
         >>> ssm.checkout_branch('feature')
     """
-    _get_ssm().checkout_branch(branch_name)
+    _get_ssm().checkout_branch(branch_name, clean=clean)
 
 
 def get_current_branch() -> Optional[str]:
@@ -3269,13 +3449,15 @@ def get_current_branch() -> Optional[str]:
 
 # ========== マージ関数 ==========
 
-def merge(branch_name: str, message: Optional[str] = None) -> str:
+def merge(branch_name: str, message: Optional[str] = None, on_conflict: str = "warn") -> str:
     """
     ブランチを現在のブランチにマージ
 
     Args:
         branch_name: マージするブランチ名
         message: マージコミットメッセージ
+        on_conflict: コンフリクト検出時の動作（"ignore" / "warn" / "error"、
+            デフォルト: "warn"）。詳細は `SSM.merge()` を参照
 
     Returns:
         str: マージコミットのハッシュ
@@ -3285,7 +3467,7 @@ def merge(branch_name: str, message: Optional[str] = None) -> str:
         >>> ssm.merge('feature')
         'abc1234...'
     """
-    return _get_ssm().merge(branch_name, message)
+    return _get_ssm().merge(branch_name, message, on_conflict=on_conflict)
 
 
 # ========== タグ関数 ==========
@@ -3325,18 +3507,20 @@ def list_tags() -> list[dict[str, Any]]:
     return _get_ssm().list_tags()
 
 
-def checkout_tag(tag_name: str) -> None:
+def checkout_tag(tag_name: str, clean: bool = False) -> None:
     """
     タグからチェックアウト
 
     Args:
         tag_name: タグ名
+        clean: True の場合、対象コミットに存在しない「以前追跡していた」
+            変数を globals から削除する（デフォルト: False）
 
     Example:
         >>> from SessionSmith import ssm
         >>> ssm.checkout_tag('v1.0.0')
     """
-    _get_ssm().checkout_tag(tag_name)
+    _get_ssm().checkout_tag(tag_name, clean=clean)
 
 
 # ========== リモート関数 ==========
