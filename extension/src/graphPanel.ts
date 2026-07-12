@@ -62,16 +62,14 @@ export class SessionGraphPanel {
     public update(): void {
         const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
         if (!workspaceRoot) {
-            this.postError('ワークスペースが開かれていません。');
+            this.postError('no-workspace');
             return;
         }
 
         const ssmPath = findSsmRoot(workspaceRoot);
         if (!ssmPath) {
             this.ssmPath = null;
-            this.postError(
-                'このワークスペースに .ssm が見つかりません。Python 側で ssm.init() を実行してください。'
-            );
+            this.postError('no-ssm');
             return;
         }
 
@@ -355,7 +353,7 @@ export class SessionGraphPanel {
         <button id="btn-reset" title="等倍にリセット">1:1</button>
     </div>
     <div id="container">
-        <div id="graph-pane"><svg id="graph"></svg></div>
+        <div id="graph-pane"><svg id="graph"></svg><div id="empty-state" class="hidden"></div></div>
         <div id="splitter"></div>
         <div id="detail-pane"><div class="placeholder">コミットを選択してください</div></div>
     </div>

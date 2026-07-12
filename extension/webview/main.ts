@@ -4,6 +4,7 @@ import { Store } from './state';
 import { renderGraph } from './render';
 import { renderDetail } from './detail';
 import { setupZoomPan, setupSplitter, setupKeyboard } from './interaction';
+import { escapeHtml } from './format';
 
 interface VsCodeApi {
     postMessage(msg: unknown): void;
@@ -20,6 +21,7 @@ const svg = document.getElementById('graph') as unknown as SVGSVGElement;
 const detailPane = document.getElementById('detail-pane') as HTMLElement;
 const statusEl = document.getElementById('status') as HTMLElement;
 const currentBranchEl = document.getElementById('current-branch') as HTMLElement;
+const emptyState = document.getElementById('empty-state') as HTMLElement;
 
 let graph: GraphData | null = null;
 let lastSize = { width: 0, height: 0 };
@@ -93,15 +95,39 @@ function showRefMenu(cx: number, cy: number, kind: 'branch' | 'tag', name: strin
 window.addEventListener('message', (event: MessageEvent<HostToWebview>) => {
     const msg = event.data;
     if (msg.type === 'graph') {
+        emptyState.classList.add('hidden');
         graph = msg.data;
         draw();
     } else if (msg.type === 'error') {
         graph = null;
         while (svg.firstChild) svg.removeChild(svg.firstChild);
-        detailPane.innerHTML = '<div class="placeholder"></div>';
-        setStatus(msg.message, true);
+        detailPane.innerHTML = '<div class="placeholder">コミットを選択してください</div>';
+        setStatus('', false);
+        renderEmptyState(msg.message);
     }
 });
+
+function renderEmptyState(kind: string): void {
+    let html = '';
+    if (kind === 'no-workspace') {
+        html = `<div class="empty"><h3>ワークスペースが開かれていません</h3>
+            <p>フォルダを開いてから Session Graph を表示してください。</p></div>`;
+    } else if (kind === 'no-ssm') {
+        html = `<div class="empty"><h3>.ssm がまだありません</h3>
+            <p>Python 側で SSM を初期化してください:</p>
+            <pre><code>from SessionSmith import ssm
+ssm.init()
+ssm.commit("first snapshot")</code></pre>
+            <button id="copy-init">⧉ コードをコピー</button></div>`;
+    } else {
+        html = `<div class="empty"><h3>${escapeHtml(kind)}</h3></div>`;
+    }
+    emptyState.innerHTML = html;
+    emptyState.classList.remove('hidden');
+    document.getElementById('copy-init')?.addEventListener('click', () => {
+        navigator.clipboard?.writeText('from SessionSmith import ssm\nssm.init()\nssm.commit("first snapshot")');
+    });
+}
 
 document.getElementById('btn-refresh')?.addEventListener('click', () => vscode.postMessage({ type: 'refresh' }));
 document.getElementById('btn-commit')?.addEventListener('click', () => vscode.postMessage({ type: 'commit' }));
