@@ -10,4 +10,6 @@ vsc-extension-quickstart.md
 **/tsconfig.json
 **/*.map
 **/*.ts
-!out/**/*.js
+out/test/**
+out/webview/**
+!out/src/**/*.js

@@ -49,3 +49,15 @@ test('renameRef rejects invalid names and duplicates', () => {
     assert.throws(() => renameRef(ssm, 'branch', 'feature', 'bad name'), RefError);
     assert.throws(() => renameRef(ssm, 'branch', 'feature', 'main'), RefError);
 });
+
+test('deleteRef does not clobber an existing .bak (uses a unique name)', () => {
+    const ssm = makeSsm();
+    // first delete of 'feature' -> feature.bak
+    deleteRef(ssm, 'branch', 'feature');
+    assert.equal(fs.existsSync(path.join(ssm, 'branches', 'feature.bak')), true);
+    // re-create 'feature' and delete again -> must NOT overwrite feature.bak
+    fs.writeFileSync(path.join(ssm, 'branches', 'feature'), 'ccc');
+    deleteRef(ssm, 'branch', 'feature');
+    assert.equal(fs.existsSync(path.join(ssm, 'branches', 'feature.bak')), true);
+    assert.equal(fs.existsSync(path.join(ssm, 'branches', 'feature.bak.1')), true);
+});

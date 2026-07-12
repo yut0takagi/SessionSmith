@@ -3,8 +3,7 @@ import type { GraphData } from './ssmReader';
 /** extension → webview */
 export type HostToWebview =
     | { type: 'graph'; data: GraphData }
-    | { type: 'error'; message: string }
-    | { type: 'loading'; value: boolean };
+    | { type: 'error'; message: string };
 
 /** webview → extension */
 export type WebviewToHost =

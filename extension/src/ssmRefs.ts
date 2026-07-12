@@ -54,7 +54,12 @@ export function deleteRef(ssmPath: string, kind: RefKind, name: string): void {
             throw new RefError('唯一のブランチは削除できません');
         }
     }
-    fs.renameSync(file, file + '.bak');
+    let backup = file + '.bak';
+    let i = 1;
+    while (fs.existsSync(backup)) {
+        backup = `${file}.bak.${i++}`;
+    }
+    fs.renameSync(file, backup);
 }
 
 /** branch/tag の参照ファイルをリネームする。branch が現在ブランチなら config を追従。 */
