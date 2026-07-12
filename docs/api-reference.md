@@ -154,7 +154,9 @@ ssm.get_current_branch() -> Optional[str]
 
 #### `ssm.merge()`
 
-指定したブランチを現在のブランチにマージします。共通祖先を検出し、2つの親を持つマージコミットを作成します。コンフリクト時は `SSMMergeConflictError` を送出します。
+指定したブランチを現在のブランチにマージします。共通祖先を検出し、2つの親（現在のHEADとマージ元）を持つマージコミットを作成します。
+
+> ⚠️ 現状のマージは**履歴の統合のみ**で、変数値レベルのコンフリクト検出は行いません。同名変数が両ブランチで異なる場合、マージ時点でセッションに存在する値がそのまま記録されます（last-writer-wins）。`SSMMergeConflictError` は将来の値マージ実装のために予約された例外で、現状は送出されません。
 
 ```python
 ssm.merge(branch_name: str, message: Optional[str] = None) -> str
@@ -449,7 +451,7 @@ load_session(
 | `SSMBranchNotFoundError` | ブランチが見つからない |
 | `SSMTagNotFoundError` | タグが見つからない |
 | `SSMRemoteNotFoundError` | リモートが見つからない |
-| `SSMMergeConflictError` | マージコンフリクト |
+| `SSMMergeConflictError` | マージコンフリクト（将来の値マージ用に予約。現状は未送出） |
 | `SessionError` | セッション操作の基底例外 |
 | `SessionSaveError` | 保存時のエラー |
 | `SessionLoadError` | 読み込み時のエラー |

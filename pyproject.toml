@@ -184,13 +184,6 @@ ignore_errors = true
 # 複数あり、上記と同様の理由で段階対応とする。
 
 [[tool.mypy.overrides]]
-module = "SessionSmith.core"
-ignore_errors = true
-# reason: load_session() のSSM成功パス(dict)とフォールバックパス(list)でloaded_varsの型が
-# 食い違っている(no-redef/attr-defined)。挙動変更を伴いうるため、本チケットではCI設定のみを
-# 扱い、修正は別issueに切り出す。
-
-[[tool.mypy.overrides]]
 module = "SessionSmith.manager"
 ignore_errors = true
 # reason: 非推奨の後方互換シム(SessionManager)。format引数のstr/Literal不一致など。

@@ -545,11 +545,11 @@ def load_session(
         session = {k: v for k, v in session.items() if k not in exclude}
 
     # グローバル変数に更新
-    loaded_vars: list[str] = []
+    loaded_names: list[str] = []
     for k, v in session.items():
         try:
             globals_dict[k] = v
-            loaded_vars.append(k)
+            loaded_names.append(k)
             if verbose:
                 print(f"Loaded variable: {k} ({type(v).__name__})")
         except Exception as e:
@@ -557,6 +557,6 @@ def load_session(
                 warnings.warn(f"Failed to load variable '{k}': {str(e)}", UserWarning, stacklevel=2)
 
     if verbose:
-        print(f"Loaded {len(loaded_vars)} variables")
+        print(f"Loaded {len(loaded_names)} variables")
 
     return session
