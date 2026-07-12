@@ -118,7 +118,7 @@ def safe_execute(
     func: Callable[..., T],
     *args: Any,
     default: Optional[T] = None,
-    on_error: Callable[[Exception], Optional[T]] = None,
+    on_error: Optional[Callable[[Exception], Optional[T]]] = None,
     **kwargs: Any
 ) -> Optional[T]:
     """

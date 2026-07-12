@@ -210,7 +210,7 @@ def get_language() -> str:
     if _current_language == Language.AUTO:
         return detect_language()
     else:
-        return _current_language.value
+        return str(_current_language.value)
 
 
 def set_language(lang: Union[str, Language], save_to_ssm: bool = True) -> None:

@@ -31,7 +31,6 @@ def _load_session_file(file_path: Union[str, Path], format: Optional[str] = None
     if not file_path.is_file():
         raise ValueError(f"'{file_path}' is not a file.")
 
-    compression: Optional[str] = None
     from .formats import detect_format, load_hdf5, load_json, load_msgpack, load_pickle
 
     session: dict[str, Any] = {}
