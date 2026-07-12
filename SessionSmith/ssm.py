@@ -49,6 +49,7 @@ from .exceptions import (
 )
 from .jupyter_utils import is_jupyter_environment, is_jupyter_internal_var
 from .locking import ProcessLock
+from .validation import ensure_within, validate_path_arg, validate_ref_name
 
 # リソース管理（オプショナル）
 try:
@@ -830,10 +831,13 @@ class SSM:
 
         # 2文字のプレフィックスでディレクトリ分割
         prefix = obj_hash[:2]
-        obj_dir = self.ssm_path / self.OBJECTS_DIR / prefix
+        objects_dir = self.ssm_path / self.OBJECTS_DIR
+        obj_dir = objects_dir / prefix
         obj_dir.mkdir(exist_ok=True)
 
         obj_path = obj_dir / obj_hash[2:]
+        # 多層防御: ハッシュは内部生成だが、念のため objects/ 配下に収まることを確認
+        ensure_within(objects_dir, obj_path)
 
         # 圧縮して保存
         if not obj_path.exists():
@@ -845,7 +849,11 @@ class SSM:
     def _load_object(self, obj_hash: str) -> bytes:
         """オブジェクトを読み込む"""
         prefix = obj_hash[:2]
-        obj_path = self.ssm_path / self.OBJECTS_DIR / prefix / obj_hash[2:]
+        objects_dir = self.ssm_path / self.OBJECTS_DIR
+        obj_path = objects_dir / prefix / obj_hash[2:]
+        # 多層防御: obj_hash はコミット JSON 由来のこともあるため、
+        # objects/ 配下に収まることを確認してから読み込む
+        ensure_within(objects_dir, obj_path)
 
         if not obj_path.exists():
             raise FileNotFoundError(f"Object not found: {obj_hash}")
@@ -1699,7 +1707,7 @@ class SSM:
 
         self._ensure_initialized()
 
-        output_path = Path(output_path)
+        output_path = validate_path_arg(output_path, "output_path")
 
         # コミットを取得
         if commit_hash is None:
@@ -1785,7 +1793,7 @@ class SSM:
 
         self._ensure_initialized()
 
-        input_path = Path(input_path)
+        input_path = validate_path_arg(input_path, "input_path")
 
         if not input_path.exists():
             raise FileNotFoundError(f"File not found: {input_path}")
@@ -1876,8 +1884,8 @@ class SSM:
         from .core import load_session, save_session
         from .formats import detect_format
 
-        input_path = Path(input_path)
-        output_path = Path(output_path)
+        input_path = validate_path_arg(input_path, "input_path")
+        output_path = validate_path_arg(output_path, "output_path")
 
         if not input_path.exists():
             raise FileNotFoundError(f"File not found: {input_path}")
@@ -2104,11 +2112,12 @@ class SSM:
                 return []
             return sorted([f.name for f in branches_dir.iterdir() if f.is_file()])
 
-        # ブランチ名の検証
-        if not branch_name or not branch_name.replace("_", "").replace("-", "").isalnum():
-            raise ValidationError("branch_name", "Branch name must be alphanumeric with underscores or hyphens")
+        # ブランチ名の検証（パストラバーサル対策。拡張機能側の isValidRefName と統一）
+        branch_name = validate_ref_name(branch_name, "branch_name")
 
         branch_file = branches_dir / branch_name
+        # 多層防御: 検証済みの名前でも branches/ 配下に収まることを確認
+        ensure_within(branches_dir, branch_file)
 
         if create:
             with self._repo_lock():
@@ -2155,10 +2164,14 @@ class SSM:
         """
         self._ensure_initialized()
 
+        branch_name = validate_ref_name(branch_name, "branch_name")
+
         # HEAD更新・config更新・checkout()（自身も再入的にロックを取る）を
         # 1つの操作として直列化する
         with self._repo_lock():
-            branch_file = self.ssm_path / self.BRANCHES_DIR / branch_name
+            branches_dir = self.ssm_path / self.BRANCHES_DIR
+            branch_file = branches_dir / branch_name
+            ensure_within(branches_dir, branch_file)
             if not branch_file.exists():
                 raise SSMBranchNotFoundError(branch_name)
 
@@ -2211,9 +2224,13 @@ class SSM:
         """
         self._ensure_initialized()
 
+        branch_name = validate_ref_name(branch_name, "branch_name")
+
         with self._repo_lock():
             # マージ元のブランチを取得
-            branch_file = self.ssm_path / self.BRANCHES_DIR / branch_name
+            branches_dir = self.ssm_path / self.BRANCHES_DIR
+            branch_file = branches_dir / branch_name
+            ensure_within(branches_dir, branch_file)
             if not branch_file.exists():
                 raise SSMBranchNotFoundError(branch_name)
 
@@ -2353,9 +2370,8 @@ class SSM:
         """
         self._ensure_initialized()
 
-        # タグ名の検証
-        if not tag_name or not tag_name.replace("_", "").replace("-", "").replace(".", "").isalnum():
-            raise ValidationError("tag_name", "Tag name must be alphanumeric with underscores, hyphens, or dots")
+        # タグ名の検証（パストラバーサル対策。拡張機能側の isValidRefName と統一）
+        tag_name = validate_ref_name(tag_name, "tag_name")
 
         with self._repo_lock():
             # コミットハッシュを取得
@@ -2372,7 +2388,9 @@ class SSM:
                     raise SSMCommitNotFoundError(commit_hash) from None
 
             # タグファイルを作成
-            tag_file = self.ssm_path / self.TAGS_DIR / tag_name
+            tags_dir = self.ssm_path / self.TAGS_DIR
+            tag_file = tags_dir / tag_name
+            ensure_within(tags_dir, tag_file)
             if tag_file.exists():
                 error_msg = i18n.translate("error.tag_already_exists", tag_name=tag_name)
                 raise SSMConfigError(error_msg)
@@ -2429,8 +2447,12 @@ class SSM:
         """
         self._ensure_initialized()
 
+        tag_name = validate_ref_name(tag_name, "tag_name")
+
         with self._repo_lock():
-            tag_file = self.ssm_path / self.TAGS_DIR / tag_name
+            tags_dir = self.ssm_path / self.TAGS_DIR
+            tag_file = tags_dir / tag_name
+            ensure_within(tags_dir, tag_file)
             if not tag_file.exists():
                 raise SSMTagNotFoundError(tag_name)
 
@@ -2463,12 +2485,18 @@ class SSM:
         """
         self._ensure_initialized()
 
-        # リモート名の検証
-        if not name or not name.replace("_", "").replace("-", "").isalnum():
-            raise ValidationError("remote_name", "Remote name must be alphanumeric with underscores or hyphens")
+        # リモート名の検証（パストラバーサル対策。拡張機能側の isValidRefName と統一）
+        name = validate_ref_name(name, "remote_name")
+
+        # リモート URL のスキーム検証（file/local, s3, gs(gcs), http(s) のみ許可）
+        from .remote_backends import validate_remote_url
+
+        url = validate_remote_url(url)
 
         with self._repo_lock():
-            remote_file = self.ssm_path / self.REMOTES_DIR / name
+            remotes_dir = self.ssm_path / self.REMOTES_DIR
+            remote_file = remotes_dir / name
+            ensure_within(remotes_dir, remote_file)
             if remote_file.exists():
                 error_msg = _get_i18n().translate("error.remote_already_exists", remote_name=name)
                 raise SSMConfigError(error_msg)
@@ -2526,12 +2554,16 @@ class SSM:
         """
         self._ensure_initialized()
 
+        remote_name = validate_ref_name(remote_name, "remote_name")
+
         # ローカル側の HEAD/リモート参照の読み取りと、リモートへの書き込みを
         # 直列化する（他プロセスの commit/checkout と競合して半端な HEAD を
         # 読まないように、また複数の push が同時にリモートへ書き込んで
         # 競合しないように）
         with self._repo_lock():
-            remote_file = self.ssm_path / self.REMOTES_DIR / remote_name
+            remotes_dir = self.ssm_path / self.REMOTES_DIR
+            remote_file = remotes_dir / remote_name
+            ensure_within(remotes_dir, remote_file)
             if not remote_file.exists():
                 raise SSMRemoteNotFoundError(remote_name)
 
@@ -2542,9 +2574,10 @@ class SSM:
                 error_msg = i18n.translate("error.remote_no_url", remote_name=remote_name)
                 raise SSMConfigError(error_msg)
 
-            # ブランチ名を取得
+            # ブランチ名を取得・検証
             if branch_name is None:
                 branch_name = self.get_current_branch() or "main"
+            branch_name = validate_ref_name(branch_name, "branch_name")
 
             # 現在のコミットを取得
             head_file = self.ssm_path / self.HEAD_FILE
@@ -2602,10 +2635,14 @@ class SSM:
         """
         self._ensure_initialized()
 
+        remote_name = validate_ref_name(remote_name, "remote_name")
+
         # リモート参照の取得からローカル HEAD/branch の更新・checkout()
         # (再入可能) までを1つの操作として直列化する
         with self._repo_lock():
-            remote_file = self.ssm_path / self.REMOTES_DIR / remote_name
+            remotes_dir = self.ssm_path / self.REMOTES_DIR
+            remote_file = remotes_dir / remote_name
+            ensure_within(remotes_dir, remote_file)
             if not remote_file.exists():
                 raise SSMRemoteNotFoundError(remote_name)
 
@@ -2616,9 +2653,10 @@ class SSM:
                 error_msg = i18n.translate("error.remote_no_url", remote_name=remote_name)
                 raise SSMConfigError(error_msg)
 
-            # ブランチ名を取得
+            # ブランチ名を取得・検証
             if branch_name is None:
                 branch_name = self.get_current_branch() or "main"
+            branch_name = validate_ref_name(branch_name, "branch_name")
 
             # リモートがファイルパスの場合
             if remote_url.startswith("/") or remote_url.startswith(".") or "://" not in remote_url:

@@ -1,0 +1,53 @@
+name: Benchmark Smoke Test
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  benchmark-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install package
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      # 厳密な性能しきい値によるゲートはここでは行わない（CIランナーの性能揺れで
+      # フレーキーになるため）。ハーネスがエンドツーエンドで動き、JSONが正しい形式で
+      # 出力されることだけを確認する「スモークテスト」として扱う。
+      - name: Run smoke benchmark
+        run: |
+          python benchmarks/bench_ssm.py --smoke --out benchmark-results.json
+
+      - name: Validate results JSON has expected shape
+        run: |
+          python -c "
+          import json
+          data = json.load(open('benchmark-results.json'))
+          assert 'meta' in data and 'results' in data, 'missing top-level keys'
+          assert len(data['results']) > 0, 'no benchmark records produced'
+          required = {'operation', 'seconds', 'peak_mem_bytes', 'n_vars', 'total_bytes', 'n_history'}
+          for record in data['results']:
+              missing = required - record.keys()
+              assert not missing, f'record missing fields: {missing}'
+          print(f\"OK: {len(data['results'])} records, preset={data['meta']['preset']}\")
+          "
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: benchmark-results.json
+          retention-days: 30

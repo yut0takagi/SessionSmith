@@ -361,6 +361,7 @@ Python notebookで複数のファイルからインポートしたり、複数�
 - 📈 [アルゴリズムトレーサー](docs/algorithm-tracer.md) - トレース・可視化機能
 - 🌐 [国際化（i18n）ガイド](docs/i18n-guide.md) - 多言語対応（日本語・英語）
 - 📚 [APIリファレンス](docs/api-reference.md) - 全APIの詳細
+- ⏱️ [ベンチマーク](benchmarks/README.md) - 大規模セッション・チェックポイント・メモリ計測（issue #31）
 
 ## 使用例
 

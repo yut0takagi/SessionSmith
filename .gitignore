@@ -34,6 +34,7 @@ Thumbs.db
 # coverage
 htmlcov/
 .coverage
+coverage.xml
 
 # production configs (example)
 config.yaml
