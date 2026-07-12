@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import { findSsmRoot, readGraph, GraphData } from './ssmReader';
 import { runSsmCode } from './runner';
+import { deleteRef, renameRef, RefError, RefKind } from './ssmRefs';
 
 /**
  * セッショングラフ（gitgraph 風）を表示する Webview パネル。
@@ -61,16 +62,14 @@ export class SessionGraphPanel {
     public update(): void {
         const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
         if (!workspaceRoot) {
-            this.postError('ワークスペースが開かれていません。');
+            this.postError('no-workspace');
             return;
         }
 
         const ssmPath = findSsmRoot(workspaceRoot);
         if (!ssmPath) {
             this.ssmPath = null;
-            this.postError(
-                'このワークスペースに .ssm が見つかりません。Python 側で ssm.init() を実行してください。'
-            );
+            this.postError('no-ssm');
             return;
         }
 
@@ -133,6 +132,15 @@ export class SessionGraphPanel {
                 return;
             case 'commit':
                 await this.doCommit();
+                return;
+            case 'merge':
+                await this.doMerge(msg.branch);
+                return;
+            case 'deleteRef':
+                await this.doDeleteRef(msg.kind, msg.name);
+                return;
+            case 'renameRef':
+                await this.doRenameRef(msg.kind, msg.name);
                 return;
             case 'copyHash':
                 if (msg.hash) {
@@ -208,11 +216,105 @@ export class SessionGraphPanel {
         );
     }
 
+    private async doMerge(preselected?: string): Promise<void> {
+        const data = this.currentGraph();
+        if (!data) {
+            return;
+        }
+        const current = data.currentBranch;
+        const candidates = data.branches
+            .map((b) => b.name)
+            .filter((n) => n !== current);
+        if (candidates.length === 0) {
+            vscode.window.showInformationMessage('マージ可能なブランチがありません。');
+            return;
+        }
+        const branch =
+            preselected && candidates.includes(preselected)
+                ? preselected
+                : await vscode.window.showQuickPick(candidates, {
+                      placeHolder: `${current ?? 'HEAD'} にマージするブランチを選択`,
+                  });
+        if (!branch) {
+            return;
+        }
+        const ok = await vscode.window.showWarningMessage(
+            `ブランチ '${branch}' を現在のブランチにマージしますか？`,
+            { modal: true },
+            'マージ'
+        );
+        if (ok !== 'マージ') {
+            return;
+        }
+        await runSsmCode(
+            `from SessionSmith import ssm; ssm.merge(${py(branch)})`,
+            this.workspaceDir()
+        );
+    }
+
+    private async doDeleteRef(kind: RefKind, name: string): Promise<void> {
+        if (!this.ssmPath) {
+            return;
+        }
+        const label = kind === 'branch' ? 'ブランチ' : 'タグ';
+        const ok = await vscode.window.showWarningMessage(
+            `${label} '${name}' を削除しますか？（.bak に退避されます）`,
+            { modal: true },
+            '削除'
+        );
+        if (ok !== '削除') {
+            return;
+        }
+        try {
+            deleteRef(this.ssmPath, kind, name);
+            vscode.window.showInformationMessage(`${label} '${name}' を削除しました。`);
+            this.update();
+        } catch (e) {
+            const message = e instanceof RefError ? e.message : String(e);
+            vscode.window.showErrorMessage(`削除に失敗しました: ${message}`);
+        }
+    }
+
+    private async doRenameRef(kind: RefKind, name: string): Promise<void> {
+        if (!this.ssmPath) {
+            return;
+        }
+        const label = kind === 'branch' ? 'ブランチ' : 'タグ';
+        const newName = await vscode.window.showInputBox({
+            prompt: `${label} '${name}' の新しい名前`,
+            value: name,
+            validateInput: (v) =>
+                /^[A-Za-z0-9_.-]+$/.test(v) ? null : '英数字・_・-・. のみ使用できます',
+        });
+        if (!newName || newName === name) {
+            return;
+        }
+        try {
+            renameRef(this.ssmPath, kind, name, newName);
+            vscode.window.showInformationMessage(`'${name}' を '${newName}' にリネームしました。`);
+            this.update();
+        } catch (e) {
+            const message = e instanceof RefError ? e.message : String(e);
+            vscode.window.showErrorMessage(`リネームに失敗しました: ${message}`);
+        }
+    }
+
     private workspaceDir(): string | undefined {
         if (this.ssmPath) {
             return path.dirname(this.ssmPath);
         }
         return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    }
+
+    private currentGraph(): GraphData | null {
+        if (!this.ssmPath) {
+            return null;
+        }
+        try {
+            return readGraph(this.ssmPath);
+        } catch {
+            return null;
+        }
     }
 
     private getHtml(): string {
@@ -243,12 +345,16 @@ export class SessionGraphPanel {
     <div id="toolbar">
         <span id="title">SessionSmith</span>
         <span id="current-branch" class="badge"></span>
+        <input id="search" type="search" placeholder="🔍 search commits, vars, refs…" />
         <span class="spacer"></span>
         <button id="btn-commit" title="現在のセッションをコミット">＋ Commit</button>
         <button id="btn-refresh" title="再読み込み">⟳ Refresh</button>
+        <button id="btn-fit" title="全体表示">⊡ Fit</button>
+        <button id="btn-reset" title="等倍にリセット">1:1</button>
     </div>
     <div id="container">
-        <div id="graph-pane"><svg id="graph"></svg></div>
+        <div id="graph-pane"><svg id="graph"></svg><div id="empty-state" class="hidden"></div></div>
+        <div id="splitter"></div>
         <div id="detail-pane"><div class="placeholder">コミットを選択してください</div></div>
     </div>
     <div id="status"></div>

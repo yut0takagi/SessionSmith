@@ -1,10 +1,15 @@
 .vscode/**
 .vscode-test/**
 src/**
+webview/**
+test/**
+esbuild.js
 .gitignore
 .yarnrc
 vsc-extension-quickstart.md
 **/tsconfig.json
 **/*.map
 **/*.ts
-!out/**/*.js
+out/test/**
+out/webview/**
+!out/src/**/*.js
