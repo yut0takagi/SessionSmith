@@ -76,7 +76,7 @@ function showRefMenu(cx: number, cy: number, kind: 'branch' | 'tag', name: strin
     menu.className = 'context-menu';
     menu.style.left = cx + 'px';
     menu.style.top = cy + 'px';
-    menu.innerHTML = `<div class="ctx-title">${kind}: ${name}</div>
+    menu.innerHTML = `<div class="ctx-title">${escapeHtml(kind)}: ${escapeHtml(name)}</div>
         <button data-a="rename">✎ リネーム</button>
         <button data-a="delete">🗑 削除</button>`;
     document.body.appendChild(menu);
@@ -95,8 +95,14 @@ function showRefMenu(cx: number, cy: number, kind: 'branch' | 'tag', name: strin
 window.addEventListener('message', (event: MessageEvent<HostToWebview>) => {
     const msg = event.data;
     if (msg.type === 'graph') {
-        emptyState.classList.add('hidden');
         graph = msg.data;
+        if (!graph.commits.length) {
+            while (svg.firstChild) svg.removeChild(svg.firstChild);
+            renderEmptyState('no-commits');
+            setStatus('0 commits · 0 branches · 0 tags', false);
+            return;
+        }
+        emptyState.classList.add('hidden');
         draw();
     } else if (msg.type === 'error') {
         graph = null;
@@ -119,6 +125,9 @@ function renderEmptyState(kind: string): void {
 ssm.init()
 ssm.commit("first snapshot")</code></pre>
             <button id="copy-init">⧉ コードをコピー</button></div>`;
+    } else if (kind === 'no-commits') {
+        html = `<div class="empty"><h3>まだコミットがありません</h3>
+            <p>ツールバーの <b>＋ Commit</b>、または Python 側で <code>ssm.commit("...")</code> を実行するとここに履歴が表示されます。</p></div>`;
     } else {
         html = `<div class="empty"><h3>${escapeHtml(kind)}</h3></div>`;
     }
@@ -149,7 +158,7 @@ function moveSelection(delta: number): void {
     const next = Math.min(graph.commits.length - 1, Math.max(0, (idx < 0 ? 0 : idx) + delta));
     selectCommit(graph.commits[next].hash);
     const yy = lastRowY.get(graph.commits[next].hash);
-    if (yy !== undefined) graphPane.scrollTo({ top: yy - graphPane.clientHeight / 2, behavior: 'smooth' });
+    if (yy !== undefined) graphPane.scrollTo({ top: yy * store.get().zoom - graphPane.clientHeight / 2, behavior: 'smooth' });
 }
 setupKeyboard({
     focusSearch: () => searchInput?.focus(),

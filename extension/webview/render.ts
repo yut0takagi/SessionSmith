@@ -100,7 +100,9 @@ export function renderGraph(
         if (dim(c)) cls += ' dim';
         svg.appendChild(el('circle', { cx, cy, r: NODE_R, class: cls, fill: laneColor(p.col) }));
 
+        // ref バッジは先に構築して幅（labelX）を確定するが、appendChild は hit rect の後（最前面）に行う
         let labelX = textX;
+        const badgeNodes: SVGGElement[] = [];
         (refs.get(c.hash) || []).forEach((r) => {
             const w = r.text.length * 6.5 + 14;
             const g = el('g', {}) as SVGGElement;
@@ -111,7 +113,7 @@ export function renderGraph(
             }));
             const prefix = r.kind === 'tag' ? '🏷 ' : r.kind === 'head' ? '' : '⎇ ';
             g.appendChild(el('text', { x: labelX + 7, y: cy + 3, class: 'ref-label ref-text' }, prefix + r.text));
-            svg.appendChild(g);
+            badgeNodes.push(g);
             labelX += w + 6;
         });
 
@@ -120,9 +122,17 @@ export function renderGraph(
         const meta = `${c.hash.slice(0, 7)} · ${c.author} · ${formatDate(c.timestamp)} · ${c.varCount} vars${c.signed ? ' · 🔒' : ''}`;
         svg.appendChild(el('text', { x: labelX, y: cy + 11, class: 'commit-meta' + (dim(c) ? ' dim' : '') }, meta));
 
+        // 行全体の透明ヒット領域（選択用）。バッジより下に置き、バッジが自前のイベントを受けられるようにする。
         const hit = el('rect', { x: 0, y: cy - ROW_H / 2, width: '100%', height: ROW_H, fill: 'transparent', style: 'cursor:pointer' });
         hit.addEventListener('click', () => onSelect(c.hash));
         svg.appendChild(hit);
+
+        // バッジは最後に append して hit rect より前面へ（右クリックメニューを機能させる）。左クリックでも選択できるようにする。
+        badgeNodes.forEach((g) => {
+            const rect = g.firstChild as SVGRectElement | null;
+            if (rect) rect.addEventListener('click', () => onSelect(c.hash));
+            svg.appendChild(g);
+        });
     });
 
     // 実際のコンテンツ幅（テキスト・refバッジ含む）を測って width に反映する。

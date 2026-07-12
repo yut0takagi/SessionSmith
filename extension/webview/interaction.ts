@@ -8,23 +8,29 @@ export function setupZoomPan(
     getSize: () => { width: number; height: number }
 ): { apply(): void; fit(): void; reset(): void } {
     function apply(): void {
-        const { zoom, panX, panY } = store.get();
+        const { zoom } = store.get();
         const { width, height } = getSize();
-        const w = Math.max(width, graphPane.clientWidth) / zoom;
-        const h = Math.max(height, graphPane.clientHeight) / zoom;
-        svg.setAttribute('viewBox', `${panX} ${panY} ${w} ${h}`);
+        const w = Math.max(width, 1);
+        const h = Math.max(height, 1);
+        // viewBox は常にコンテンツ全体。物理サイズを zoom 倍し、はみ出しは #graph-pane のスクロールで見せる。
+        svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
         svg.setAttribute('preserveAspectRatio', 'xMinYMin meet');
+        svg.setAttribute('width', String(w * zoom));
+        svg.setAttribute('height', String(h * zoom));
     }
     function fit(): void {
         const { width, height } = getSize();
         const zx = graphPane.clientWidth / Math.max(width, 1);
         const zy = graphPane.clientHeight / Math.max(height, 1);
-        store.set({ zoom: Math.min(1, Math.min(zx, zy)), panX: 0, panY: 0 });
+        // 全体が収まる倍率。1 を超えて拡大はしない（小さいグラフは等倍表示）。
+        store.set({ zoom: Math.max(0.1, Math.min(1, Math.min(zx, zy))) });
         apply();
+        graphPane.scrollTo({ top: 0, left: 0 });
     }
     function reset(): void {
-        store.set({ zoom: 1, panX: 0, panY: 0 });
+        store.set({ zoom: 1 });
         apply();
+        graphPane.scrollTo({ top: 0, left: 0 });
     }
 
     graphPane.addEventListener('wheel', (e) => {
@@ -36,6 +42,7 @@ export function setupZoomPan(
         apply();
     }, { passive: false });
 
+    // ドラッグでパン（ネイティブスクロールを動かす）。プレーンなクリックは移動が無いので選択に影響しない。
     let dragging = false;
     let lastX = 0;
     let lastY = 0;
@@ -52,11 +59,10 @@ export function setupZoomPan(
     });
     window.addEventListener('mousemove', (e) => {
         if (!dragging) return;
-        const st = store.get();
-        store.set({ panX: st.panX - (e.clientX - lastX) / st.zoom, panY: st.panY - (e.clientY - lastY) / st.zoom });
+        graphPane.scrollLeft -= e.clientX - lastX;
+        graphPane.scrollTop -= e.clientY - lastY;
         lastX = e.clientX;
         lastY = e.clientY;
-        apply();
     });
 
     return { apply, fit, reset };
