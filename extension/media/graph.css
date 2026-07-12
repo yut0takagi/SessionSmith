@@ -67,7 +67,7 @@ svg text { fill: var(--vscode-foreground); font-family: var(--vscode-font-family
 .commit-msg { font-size: 13px; }
 .commit-meta { font-size: 11px; fill: var(--vscode-descriptionForeground); }
 
-.ref-label { font-size: 11px; font-weight: 600; }
+.ref-label { font-size: 11px; font-weight: 600; pointer-events: none; }
 .ref-bg-branch { fill: var(--vscode-gitDecoration-modifiedResourceForeground, #4daafc); opacity: 0.9; }
 .ref-bg-tag { fill: var(--vscode-gitDecoration-untrackedResourceForeground, #73c991); opacity: 0.9; }
 .ref-bg-head { fill: var(--vscode-focusBorder, #007acc); }
