@@ -70,8 +70,6 @@ SessionSmith プロセス間ロック (.ssm リポジトリ単位)
    ロックは不要です。
 """
 
-from __future__ import annotations
-
 import json
 import logging
 import os
@@ -240,7 +238,7 @@ class ProcessLock:
                 self._rlock.release()
             raise
 
-    def __exit__(self, exc_type, exc, tb) -> bool:
+    def __exit__(self, exc_type, exc, tb) -> None:
         try:
             with _registry_guard:
                 count = max(0, _reentry_counts.get(self._key, 1) - 1)
@@ -253,7 +251,7 @@ class ProcessLock:
             if self._rlock_acquired:
                 self._rlock_acquired = False
                 self._rlock.release()
-        return False
+        return None
 
     # ------------------------------------------------------------------
     # OS レベルのロックファイル操作（この時点で呼び出しスレッドは、
@@ -315,9 +313,10 @@ class ProcessLock:
     def _read_holder_info(self) -> Optional[dict]:
         try:
             raw = self.lock_path.read_text(encoding="utf-8")
-            return json.loads(raw)
+            data = json.loads(raw)
         except (OSError, ValueError):
             return None
+        return data if isinstance(data, dict) else None
 
     def _reclaim_if_stale(self) -> bool:
         """
