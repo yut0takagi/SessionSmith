@@ -3,3 +3,7 @@ out/
 *.vsix
 .DS_Store
 
+
+# esbuild が media/ に生成するバンドル（vscode:prepublish で再生成される）
+media/graph.js
+media/graph.js.map
