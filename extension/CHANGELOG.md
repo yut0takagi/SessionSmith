@@ -11,6 +11,7 @@
 - リサイズ可能な詳細ペイン（幅を永続化）
 - 空状態オンボーディング（`ssm.init()` のコピー、コミット0件ガイド）、reduced-motion 対応
 - 拡張アイコン（icon.png）
+- サイドバー表示: アクティビティバーの SessionSmith パネルに Session Graph（webview ビュー）を追加。幅に応じて詳細ペインを縦積み。Sessions ツリーと併存。
 
 ### Changed
 - webview を TypeScript 化し esbuild でバンドル、レンダラをモジュール分割

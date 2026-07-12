@@ -171,5 +171,16 @@ setupKeyboard({
 });
 document.getElementById('btn-fit')?.addEventListener('click', () => zoomPan.fit());
 document.getElementById('btn-reset')?.addEventListener('click', () => zoomPan.reset());
+document.getElementById('btn-open-editor')?.addEventListener('click', () => vscode.postMessage({ type: 'openInEditor' }));
+
+const containerEl = document.getElementById('container') as HTMLElement;
+function updateNarrow(): void {
+    containerEl.classList.toggle('narrow', containerEl.clientWidth < 600);
+}
+if (typeof ResizeObserver !== 'undefined') {
+    new ResizeObserver(() => updateNarrow()).observe(containerEl);
+}
+window.addEventListener('resize', updateNarrow);
+updateNarrow();
 
 vscode.postMessage({ type: 'ready' });

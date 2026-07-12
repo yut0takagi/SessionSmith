@@ -7,6 +7,7 @@ import {
     executeCodeInNotebook,
 } from './runner';
 import { SessionGraphPanel } from './graphPanel';
+import { SessionGraphViewProvider } from './graphView';
 import { SessionTreeProvider } from './treeView';
 
 export function activate(context: vscode.ExtensionContext) {
@@ -28,6 +29,16 @@ export function activate(context: vscode.ExtensionContext) {
     const refreshTreeCommand = vscode.commands.registerCommand(
         'sessionsmith.refreshTree',
         () => treeProvider.refresh()
+    );
+
+    // === サイドバーの Session Graph（WebviewView） ===
+    const graphViewProvider = new SessionGraphViewProvider(context.extensionUri);
+    context.subscriptions.push(
+        vscode.window.registerWebviewViewProvider(
+            SessionGraphViewProvider.viewType,
+            graphViewProvider,
+            { webviewOptions: { retainContextWhenHidden: true } }
+        )
     );
 
     // .ssm の変更でツリーを自動更新

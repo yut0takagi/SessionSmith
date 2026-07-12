@@ -42,6 +42,7 @@ export function getGraphHtml(webview: vscode.Webview, extensionUri: vscode.Uri):
         <button id="btn-refresh" title="再読み込み">⟳ Refresh</button>
         <button id="btn-fit" title="全体表示">⊡ Fit</button>
         <button id="btn-reset" title="等倍にリセット">1:1</button>
+        <button id="btn-open-editor" title="エディタで全画面表示">⤢</button>
     </div>
     <div id="container">
         <div id="graph-pane"><svg id="graph"></svg><div id="empty-state" class="hidden"></div></div>
@@ -167,6 +168,9 @@ export class GraphSession {
                     await vscode.env.clipboard.writeText(msg.hash);
                     vscode.window.showInformationMessage(`Copied: ${msg.hash}`);
                 }
+                return;
+            case 'openInEditor':
+                vscode.commands.executeCommand('sessionsmith.showSessionGraph');
                 return;
         }
     }
