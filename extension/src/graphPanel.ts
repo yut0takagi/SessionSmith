@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import { findSsmRoot, readGraph, GraphData } from './ssmReader';
 import { runSsmCode } from './runner';
+import { deleteRef, renameRef, RefError, RefKind } from './ssmRefs';
 
 /**
  * セッショングラフ（gitgraph 風）を表示する Webview パネル。
@@ -134,6 +135,15 @@ export class SessionGraphPanel {
             case 'commit':
                 await this.doCommit();
                 return;
+            case 'merge':
+                await this.doMerge(msg.branch);
+                return;
+            case 'deleteRef':
+                await this.doDeleteRef(msg.kind, msg.name);
+                return;
+            case 'renameRef':
+                await this.doRenameRef(msg.kind, msg.name);
+                return;
             case 'copyHash':
                 if (msg.hash) {
                     await vscode.env.clipboard.writeText(msg.hash);
@@ -208,11 +218,105 @@ export class SessionGraphPanel {
         );
     }
 
+    private async doMerge(preselected?: string): Promise<void> {
+        const data = this.currentGraph();
+        if (!data) {
+            return;
+        }
+        const current = data.currentBranch;
+        const candidates = data.branches
+            .map((b) => b.name)
+            .filter((n) => n !== current);
+        if (candidates.length === 0) {
+            vscode.window.showInformationMessage('マージ可能なブランチがありません。');
+            return;
+        }
+        const branch =
+            preselected && candidates.includes(preselected)
+                ? preselected
+                : await vscode.window.showQuickPick(candidates, {
+                      placeHolder: `${current ?? 'HEAD'} にマージするブランチを選択`,
+                  });
+        if (!branch) {
+            return;
+        }
+        const ok = await vscode.window.showWarningMessage(
+            `ブランチ '${branch}' を現在のブランチにマージしますか？`,
+            { modal: true },
+            'マージ'
+        );
+        if (ok !== 'マージ') {
+            return;
+        }
+        await runSsmCode(
+            `from SessionSmith import ssm; ssm.merge(${py(branch)})`,
+            this.workspaceDir()
+        );
+    }
+
+    private async doDeleteRef(kind: RefKind, name: string): Promise<void> {
+        if (!this.ssmPath) {
+            return;
+        }
+        const label = kind === 'branch' ? 'ブランチ' : 'タグ';
+        const ok = await vscode.window.showWarningMessage(
+            `${label} '${name}' を削除しますか？（.bak に退避されます）`,
+            { modal: true },
+            '削除'
+        );
+        if (ok !== '削除') {
+            return;
+        }
+        try {
+            deleteRef(this.ssmPath, kind, name);
+            vscode.window.showInformationMessage(`${label} '${name}' を削除しました。`);
+            this.update();
+        } catch (e) {
+            const message = e instanceof RefError ? e.message : String(e);
+            vscode.window.showErrorMessage(`削除に失敗しました: ${message}`);
+        }
+    }
+
+    private async doRenameRef(kind: RefKind, name: string): Promise<void> {
+        if (!this.ssmPath) {
+            return;
+        }
+        const label = kind === 'branch' ? 'ブランチ' : 'タグ';
+        const newName = await vscode.window.showInputBox({
+            prompt: `${label} '${name}' の新しい名前`,
+            value: name,
+            validateInput: (v) =>
+                /^[A-Za-z0-9_.-]+$/.test(v) ? null : '英数字・_・-・. のみ使用できます',
+        });
+        if (!newName || newName === name) {
+            return;
+        }
+        try {
+            renameRef(this.ssmPath, kind, name, newName);
+            vscode.window.showInformationMessage(`'${name}' を '${newName}' にリネームしました。`);
+            this.update();
+        } catch (e) {
+            const message = e instanceof RefError ? e.message : String(e);
+            vscode.window.showErrorMessage(`リネームに失敗しました: ${message}`);
+        }
+    }
+
     private workspaceDir(): string | undefined {
         if (this.ssmPath) {
             return path.dirname(this.ssmPath);
         }
         return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    }
+
+    private currentGraph(): GraphData | null {
+        if (!this.ssmPath) {
+            return null;
+        }
+        try {
+            return readGraph(this.ssmPath);
+        } catch {
+            return null;
+        }
     }
 
     private getHtml(): string {
