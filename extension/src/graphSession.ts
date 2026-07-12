@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import { findSsmRoot, readGraph, GraphData } from './ssmReader';
 import { runSsmCode } from './runner';
-import { deleteRef, renameRef, RefError, RefKind } from './ssmRefs';
+import { deleteRef, isValidRefName, renameRef, RefError, RefKind } from './ssmRefs';
 
 /**
  * セッショングラフ（gitgraph 風）Webview の HTML を生成する。
@@ -308,7 +308,7 @@ export class GraphSession {
             prompt: `${label} '${name}' の新しい名前`,
             value: name,
             validateInput: (v) =>
-                /^[A-Za-z0-9_.-]+$/.test(v) ? null : '英数字・_・-・. のみ使用できます',
+                isValidRefName(v) ? null : '英数字・_・-・. のみ使用でき、"." や ".." は使用できません',
         });
         if (!newName || newName === name) {
             return;

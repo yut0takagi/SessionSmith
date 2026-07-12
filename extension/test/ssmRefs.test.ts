@@ -3,7 +3,7 @@ import assert from 'node:assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { deleteRef, renameRef, RefError } from '../src/ssmRefs';
+import { deleteRef, isValidRefName, renameRef, RefError } from '../src/ssmRefs';
 
 function makeSsm(): string {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ssmrefs-'));
@@ -60,4 +60,42 @@ test('deleteRef does not clobber an existing .bak (uses a unique name)', () => {
     deleteRef(ssm, 'branch', 'feature');
     assert.equal(fs.existsSync(path.join(ssm, 'branches', 'feature.bak')), true);
     assert.equal(fs.existsSync(path.join(ssm, 'branches', 'feature.bak.1')), true);
+});
+
+test('isValidRefName accepts normal names and rejects traversal/invalid names', () => {
+    for (const name of ['main', 'v1.0.0', 'feature-1', 'exp_2', 'feature', 'experiment']) {
+        assert.equal(isValidRefName(name), true, `expected '${name}' to be valid`);
+    }
+    for (const name of ['..', '.', '...', 'a/b', 'a\\b', '../evil', '', '-leading', 'bad name']) {
+        assert.equal(isValidRefName(name), false, `expected '${name}' to be invalid`);
+    }
+});
+
+test('deleteRef rejects path-traversal and invalid names (RefError)', () => {
+    const ssm = makeSsm();
+    assert.throws(() => deleteRef(ssm, 'branch', '..'), RefError);
+    assert.throws(() => deleteRef(ssm, 'branch', '.'), RefError);
+    assert.throws(() => deleteRef(ssm, 'branch', 'a/b'), RefError);
+    assert.throws(() => deleteRef(ssm, 'branch', '../feature'), RefError);
+    // Files outside branches/ must remain untouched.
+    assert.equal(fs.existsSync(path.join(path.dirname(ssm), 'feature')), false);
+});
+
+test('renameRef rejects path-traversal and invalid names in either argument (RefError)', () => {
+    const ssm = makeSsm();
+    assert.throws(() => renameRef(ssm, 'branch', '..', 'trunk'), RefError);
+    assert.throws(() => renameRef(ssm, 'branch', 'feature', '..'), RefError);
+    assert.throws(() => renameRef(ssm, 'branch', 'feature', '.'), RefError);
+    assert.throws(() => renameRef(ssm, 'branch', 'feature', 'a/b'), RefError);
+    assert.throws(() => renameRef(ssm, 'branch', 'feature', '../evil'), RefError);
+    // 'feature' must not have been touched by any of the rejected attempts.
+    assert.equal(fs.existsSync(path.join(ssm, 'branches', 'feature')), true);
+});
+
+test('deleteRef and renameRef still work for valid names after validation was added', () => {
+    const ssm = makeSsm();
+    renameRef(ssm, 'tag', 'v1', 'v1.0.0');
+    assert.equal(fs.existsSync(path.join(ssm, 'tags', 'v1.0.0')), true);
+    deleteRef(ssm, 'tag', 'v1.0.0');
+    assert.equal(fs.existsSync(path.join(ssm, 'tags', 'v1.0.0.bak')), true);
 });

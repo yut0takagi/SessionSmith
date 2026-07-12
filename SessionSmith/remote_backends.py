@@ -31,10 +31,17 @@ from pathlib import Path
 from typing import Optional
 from urllib.parse import urlparse
 
+from .exceptions import ValidationError
+from .validation import _has_control_chars
+
 logger = logging.getLogger("SessionSmith.remote")
 
 # 全ファイル一覧を保持するマニフェスト（HTTP のような一覧不可のバックエンド用）
 MANIFEST_NAME = "manifest.json"
+
+# remote_add() などで許可するリモート URL のスキーム。
+# スキームなし（ローカルパス）・Windows ドライブレター（例: "C:"）も別途許可する。
+SUPPORTED_REMOTE_SCHEMES = frozenset({"file", "s3", "gs", "gcs", "http", "https"})
 
 
 class RemoteBackendError(Exception):
@@ -237,6 +244,48 @@ class HTTPBackend(RemoteBackend):
         if prefix:
             files = [f for f in files if f.startswith(prefix)]
         return files
+
+
+def validate_remote_url(url: str) -> str:
+    """
+    リモート URL のスキームが対応済みか検証します（``remote_add`` 時の早期検証用）。
+
+    ローカルパス（スキームなし。Windows ドライブレターを含む）と
+    ``file://`` / ``s3://`` / ``gs://`` (``gcs://``) / ``http(s)://`` を許可します。
+    それ以外のスキーム（``ftp://``, ``javascript:`` など）は拒否します。
+
+    ``get_backend()`` は push/pull 実行時に同様の判定を行い ``RemoteBackendError``
+    を送出しますが、こちらは ``remote_add`` の時点で早期に、かつ既存の
+    ``ValidationError`` で失敗させるためのものです。
+
+    Args:
+        url: リモート URL
+
+    Returns:
+        str: 検証済みの URL（そのまま返す）
+
+    Raises:
+        ValidationError: URL が空、制御文字を含む、または未対応のスキームの場合
+    """
+    if not isinstance(url, str) or not url.strip():
+        raise ValidationError("url", "Remote URL must not be empty", url)
+
+    if _has_control_chars(url):
+        raise ValidationError("url", "Remote URL must not contain control characters", url)
+
+    parsed = urlparse(url)
+    scheme = parsed.scheme.lower()
+
+    # スキームなし = ローカルパス、1文字 = Windows ドライブレター（C: など）
+    if scheme == "" or len(scheme) == 1 or scheme in SUPPORTED_REMOTE_SCHEMES:
+        return url
+
+    raise ValidationError(
+        "url",
+        f"Unsupported remote scheme: '{scheme}://' "
+        "(supported: local path, file, s3, gs/gcs, http, https)",
+        url,
+    )
 
 
 def get_backend(url: str, *, local_ssm_dirname: str = ".ssm") -> RemoteBackend:
