@@ -13,8 +13,14 @@ from SessionSmith._console import safe_print
 
 
 def _cp1252_stream() -> io.TextIOWrapper:
-    """Windows のレガシーコンソールを模した、cp1252 の厳密なストリーム"""
-    return io.TextIOWrapper(io.BytesIO(), encoding="cp1252", errors="strict")
+    """Windows のレガシーコンソールを模した、cp1252 の厳密なストリーム
+
+    `newline=""` で改行変換を無効にしている。既定のままだと Windows 上では
+    `\n` が `\r\n` に変換され、アサーションがプラットフォーム依存になるため。
+    """
+    return io.TextIOWrapper(
+        io.BytesIO(), encoding="cp1252", errors="strict", newline=""
+    )
 
 
 class TestSafePrint:
