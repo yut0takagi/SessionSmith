@@ -13,7 +13,7 @@
 import os
 import re
 from pathlib import Path
-from typing import Union
+from typing import Optional, Union
 
 from .exceptions import ValidationError
 
@@ -23,6 +23,11 @@ _REF_NAME_CHARS_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
 
 #: 参照名（ブランチ/タグ/リモート名）の最大長
 MAX_REF_NAME_LENGTH = 255
+
+# 長パスを有効化していない Windows の MAX_PATH（終端 NUL を含めて 260）。
+# 参照は1名前1ファイルで保持するため、長い参照名 + 深いプロジェクト配置で
+# 容易に超える。超えた場合の OSError は原因が分かりにくいので事前に弾く。
+WINDOWS_MAX_PATH = 260
 
 # Windows の予約デバイス名。ディレクトリ配下でもデバイスとして解決されるため、
 # `branches/NUL` のようなパスへの書き込みはヌルデバイスに吸われてしまう。
@@ -180,3 +185,49 @@ def validate_path_arg(path: Union[str, "os.PathLike[str]"], field: str = "path")
         raise ValidationError(field, "Path must not contain control characters", path)
 
     return Path(path_str)
+
+
+def check_path_length(
+    path: Union[str, "os.PathLike[str]"],
+    *,
+    field: str = "path",
+    enforce: Optional[bool] = None,
+) -> Path:
+    """
+    Windows の ``MAX_PATH`` 制限に掛かるパスを、原因の分かるエラーにします。
+
+    長パスを有効化していない Windows では、絶対パスが 260 文字以上になると
+    ``OSError`` / ``FileNotFoundError`` になります。「パスが長すぎる」という
+    本当の原因が分からないため、書き込み前に検査して明示的に失敗させます。
+
+    制限は Windows 固有なので、既定では Windows 上でのみ検査します
+    （プラットフォーム非依存の一律制限にすると、Linux で作れる名前が
+    不必要に狭くなるため）。
+
+    Args:
+        path: 検査するパス
+        field: エラーメッセージ・``ValidationError.field`` に使う項目名
+        enforce: 検査を行うか。``None`` の場合は Windows 上でのみ検査する
+                 （テストから強制的に有効化するための引数）
+
+    Returns:
+        Path: 検査済みのパス（そのまま返す）
+
+    Raises:
+        ValidationError: パスが ``MAX_PATH`` 以上の場合
+    """
+    if enforce is None:
+        enforce = os.name == "nt"
+    if not enforce:
+        return Path(path)
+
+    resolved = os.path.abspath(str(path))
+    if len(resolved) >= WINDOWS_MAX_PATH:
+        raise ValidationError(
+            field,
+            f"Path is too long for Windows: {len(resolved)} characters "
+            f"(the limit is {WINDOWS_MAX_PATH}). "
+            "Use a shorter name, or place the project closer to the drive root.",
+            resolved,
+        )
+    return Path(path)

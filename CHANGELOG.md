@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`init(force=True)` の `.ssm` 破棄を堅牢化 (#53)**
+  - 破棄をリポジトリロックの内側で行い、他プロセスが操作の途中で消されないようにした
+  - Windows の一時的な削除失敗（他プロセスが開いている `WinError 32`、読み取り専用属性）に対して、
+    属性の解除と短いリトライを追加
+  - 削除に失敗した場合は削除失敗として明示的に送出する。従来は `rmtree` が途中で失敗しても
+    素通りし、直後の `mkdir()` が `FileExistsError`（「既に存在します」）になって
+    本当の原因が伝わらなかった
+- **Windows の `MAX_PATH` 制限を分かりやすいエラーにした (#54)**
+  - 参照名は255文字まで許可されるため、`.ssm/branches/<name>` は長パス未有効の Windows の
+    上限（260文字）を容易に超える。従来は原因の分からない `OSError` になっていた
+  - `check_path_length()` を追加し、書き込みの集約点（`_write_text_atomic()` / `_write_json()`）で
+    一時ファイル名も含めて検査する
+  - 制限は Windows 固有のため既定では Windows 上でのみ検査する（テストからは強制可能）
+
 - **参照名の解決が大文字小文字を区別していなかった問題を修正 (#51)**
   - ブランチ・タグ・リモートの存在確認を `Path.exists()` で行っていたため、
     macOS（APFS の既定）と Windows では `branches/feature` しか無いのに
