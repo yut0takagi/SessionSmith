@@ -950,7 +950,7 @@ class SSM:
         if check_conflicts:
             try:
                 head_file = self.ssm_path / self.HEAD_FILE
-                current_commit_hash = head_file.read_text().strip()
+                current_commit_hash = head_file.read_text(encoding="utf-8").strip()
 
                 if current_commit_hash:
                     commit_path = self.ssm_path / self.COMMITS_DIR / f"{current_commit_hash}.json"
@@ -1165,13 +1165,13 @@ class SSM:
             if current_branch:
                 branch_file = self.ssm_path / self.BRANCHES_DIR / current_branch
                 if branch_file.exists():
-                    parent = branch_file.read_text().strip() or None
+                    parent = branch_file.read_text(encoding="utf-8").strip() or None
                 else:
                     head_file = self.ssm_path / self.HEAD_FILE
-                    parent = head_file.read_text().strip() or None
+                    parent = head_file.read_text(encoding="utf-8").strip() or None
             else:
                 head_file = self.ssm_path / self.HEAD_FILE
-                parent = head_file.read_text().strip() or None
+                parent = head_file.read_text(encoding="utf-8").strip() or None
 
             # 呼び出し元の情報を取得（ファイル名、関数名など）
             caller_info = self._get_caller_info(depth=3)
@@ -1259,7 +1259,7 @@ class SSM:
         self._ensure_initialized()
 
         head_file = self.ssm_path / self.HEAD_FILE
-        current = head_file.read_text().strip()
+        current = head_file.read_text(encoding="utf-8").strip()
 
         if not current:
             safe_print("No commits yet")
@@ -1337,7 +1337,7 @@ class SSM:
             # を呼ぶよう順序が調整されているため、ブランチ切り替え経由でも
             # 同様に正しい）。
             head_file = self.ssm_path / self.HEAD_FILE
-            previous_commit_hash = head_file.read_text().strip() if head_file.exists() else ""
+            previous_commit_hash = head_file.read_text(encoding="utf-8").strip() if head_file.exists() else ""
 
             if commit_hash is None:
                 # HEADのコミットを復元
@@ -1462,7 +1462,7 @@ class SSM:
         self._ensure_initialized()
 
         head_file = self.ssm_path / self.HEAD_FILE
-        current = head_file.read_text().strip()
+        current = head_file.read_text(encoding="utf-8").strip()
 
         globals_dict = self._get_globals_dict(depth=3)
         variables = self._get_saveable_vars(globals_dict)
@@ -1491,7 +1491,7 @@ class SSM:
         self._ensure_initialized()
 
         head_file = self.ssm_path / self.HEAD_FILE
-        current = head_file.read_text().strip()
+        current = head_file.read_text(encoding="utf-8").strip()
 
         if not current:
             safe_print("No commits to compare")
@@ -1840,7 +1840,7 @@ class SSM:
         # コミットを取得
         if commit_hash is None:
             head_file = self.ssm_path / self.HEAD_FILE
-            commit_hash = head_file.read_text().strip()
+            commit_hash = head_file.read_text(encoding="utf-8").strip()
             if not commit_hash:
                 raise SSMNoCommitsError()
 
@@ -2150,7 +2150,7 @@ class SSM:
 
         if commit_hash is None:
             head_file = self.ssm_path / self.HEAD_FILE
-            commit_hash = head_file.read_text().strip()
+            commit_hash = head_file.read_text(encoding="utf-8").strip()
             if not commit_hash:
                 raise SSMNoCommitsError()
 
@@ -2257,7 +2257,7 @@ class SSM:
 
                 # 現在のHEADを取得
                 head_file = self.ssm_path / self.HEAD_FILE
-                current_commit = head_file.read_text().strip()
+                current_commit = head_file.read_text(encoding="utf-8").strip()
 
                 if not current_commit:
                     raise SSMNoCommitsError()
@@ -2308,7 +2308,7 @@ class SSM:
                 raise SSMBranchNotFoundError(branch_name)
 
             # ブランチのコミットを取得
-            commit_hash = branch_file.read_text().strip()
+            commit_hash = branch_file.read_text(encoding="utf-8").strip()
 
             # 変数を復元（ProcessLock は再入可能なのでここでデッドロックしない）。
             # HEAD/config の更新より前に行う: clean=True のとき、checkout()
@@ -2399,11 +2399,11 @@ class SSM:
             if not branch_file.exists():
                 raise SSMBranchNotFoundError(branch_name)
 
-            merge_commit = branch_file.read_text().strip()
+            merge_commit = branch_file.read_text(encoding="utf-8").strip()
 
             # 現在のHEADを取得
             head_file = self.ssm_path / self.HEAD_FILE
-            current_commit = head_file.read_text().strip()
+            current_commit = head_file.read_text(encoding="utf-8").strip()
 
             if not current_commit:
                 raise SSMNoCommitsError()
@@ -2630,7 +2630,7 @@ class SSM:
             # コミットハッシュを取得
             if commit_hash is None:
                 head_file = self.ssm_path / self.HEAD_FILE
-                commit_hash = head_file.read_text().strip()
+                commit_hash = head_file.read_text(encoding="utf-8").strip()
                 if not commit_hash:
                     raise SSMNoCommitsError()
             else:
@@ -2837,7 +2837,7 @@ class SSM:
 
             # 現在のコミットを取得
             head_file = self.ssm_path / self.HEAD_FILE
-            current_commit = head_file.read_text().strip()
+            current_commit = head_file.read_text(encoding="utf-8").strip()
 
             if not current_commit:
                 raise SSMNoCommitsError()
@@ -2928,7 +2928,7 @@ class SSM:
                 if not remote_branch_file.exists():
                     raise SSMBranchNotFoundError(branch_name)
 
-                remote_commit = remote_branch_file.read_text().strip()
+                remote_commit = remote_branch_file.read_text(encoding="utf-8").strip()
 
                 # コミットとオブジェクトをコピー
                 self._copy_from_remote(remote_ssm_path)

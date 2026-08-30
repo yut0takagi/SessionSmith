@@ -187,7 +187,7 @@ def visualize_arrays(
                         try:
                             html = anim.to_jshtml()
                             html_file = output_file.with_suffix('.html')
-                            with open(str(html_file), 'w') as f:
+                            with open(str(html_file), 'w', encoding='utf-8') as f:
                                 f.write(html)
                             safe_print(f"Animation saved to {html_file}")
                         except Exception as e2:
@@ -195,7 +195,7 @@ def visualize_arrays(
                 elif output_file.suffix == '.html':
                     try:
                         html = anim.to_jshtml()
-                        with open(str(output_file), 'w') as f:
+                        with open(str(output_file), 'w', encoding='utf-8') as f:
                             f.write(html)
                         safe_print(f"Animation saved to {output_file}")
                     except Exception as e:
@@ -204,7 +204,7 @@ def visualize_arrays(
                     warnings.warn(f"Unknown file extension: {output_file.suffix}. Saving as HTML.", stacklevel=2)
                     html_file = output_file.with_suffix('.html')
                     html = anim.to_jshtml()
-                    with open(str(html_file), 'w') as f:
+                    with open(str(html_file), 'w', encoding='utf-8') as f:
                         f.write(html)
                     safe_print(f"Animation saved to {html_file}")
             if show:
