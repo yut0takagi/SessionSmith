@@ -33,7 +33,7 @@ from collections import OrderedDict
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Optional, Union
+from typing import TYPE_CHECKING, Any, Callable, Optional, Union, cast
 
 from . import i18n
 from .exceptions import (
@@ -49,17 +49,27 @@ from .exceptions import (
     ValidationError,
     _get_i18n,
 )
+from .formats import SessionFormat
 from .jupyter_utils import is_jupyter_environment, is_jupyter_internal_var
 from .locking import ProcessLock
 from .validation import ensure_within, validate_path_arg, validate_ref_name
 
-# リソース管理（オプショナル）
-try:
+if TYPE_CHECKING:
+    from types import FrameType
+
     from .resource_manager import ResourceManager
+
+# リソース管理（オプショナル）
+# 型注釈用の名前（TYPE_CHECKING 側）と実体を分けることで、
+# ImportError 時に「型に None を代入する」不整合を避ける。
+try:
+    from .resource_manager import ResourceManager as _ResourceManagerImpl
     HAS_RESOURCE_MANAGER = True
 except ImportError:
     HAS_RESOURCE_MANAGER = False
-    ResourceManager = None
+
+# signal.signal() が返す「元のハンドラ」の型
+_SignalHandler = Union[Callable[[int, Optional["FrameType"]], Any], int, None]
 
 # ロガー設定
 logger = logging.getLogger("SessionSmith.ssm")
@@ -109,8 +119,8 @@ class CheckpointContext:
         self._metrics: dict[str, list[float]] = {}
 
         # シグナルハンドラー
-        self._original_sigint = None
-        self._original_sigterm = None
+        self._original_sigint: _SignalHandler = None
+        self._original_sigterm: _SignalHandler = None
 
     @property
     def checkpoint_dir(self) -> Path:
@@ -382,9 +392,10 @@ class CheckpointContext:
             logger.error(f"Failed to save checkpoint in signal handler: {e}")
 
         # 元のハンドラーを呼び出し
-        if signum == signal.SIGINT and self._original_sigint:
+        # 元のハンドラは int（SIG_DFL / SIG_IGN）の場合があるため callable を確認する
+        if signum == signal.SIGINT and callable(self._original_sigint):
             self._original_sigint(signum, frame)
-        elif signum == signal.SIGTERM and self._original_sigterm:
+        elif signum == signal.SIGTERM and callable(self._original_sigterm):
             self._original_sigterm(signum, frame)
 
     def _on_exit(self) -> None:
@@ -495,7 +506,7 @@ class SSM:
         self._resource_manager: Optional[ResourceManager] = None
         if HAS_RESOURCE_MANAGER:
             try:
-                self._resource_manager = ResourceManager(self.ssm_path)
+                self._resource_manager = _ResourceManagerImpl(self.ssm_path)
             except Exception as e:
                 logger.warning(f"Failed to initialize ResourceManager: {e}")
 
@@ -1043,7 +1054,7 @@ class SSM:
     def _serialize_with_retry(
         self,
         value: Any,
-        max_attempts: int = None,
+        max_attempts: Optional[int] = None,
     ) -> bytes:
         """
         リトライ付きシリアライズ
@@ -1230,7 +1241,8 @@ class SSM:
             raise FileNotFoundError(f"Snapshot not found: {name}")
 
         with gzip.open(snapshot_path, 'rb') as f:
-            return pickle.load(f)
+            # pickle.load() は Any を返すため、保存時の型を cast で明示する
+            return cast(dict[str, Any], pickle.load(f))
 
     def log(self, limit: int = 10, oneline: bool = False) -> list[dict[str, Any]]:
         """
@@ -1725,7 +1737,7 @@ class SSM:
         self._ensure_initialized()
 
         checkpoint_dir = self.ssm_path / self.CHECKPOINTS_DIR
-        checkpoints = []
+        checkpoints: list[dict[str, Any]] = []
 
         if not checkpoint_dir.exists():
             return checkpoints
@@ -1858,7 +1870,8 @@ class SSM:
             file_path=output_path,
             globals_dict=variables,
             compress=compress,
-            format=format,
+            # 未対応の値は core 側の detect_format() が ValueError を送出する
+            format=cast(Optional[SessionFormat], format),
             use_ssm=False,  # 循環参照を避けるため
         )
 
@@ -1938,7 +1951,7 @@ class SSM:
             load_session(
                 file_path=read_path,
                 globals_dict=loaded_vars,
-                format=format,
+                format=cast(Optional[SessionFormat], format),
                 use_ssm=False,  # 循環参照を避けるため
             )
         finally:
@@ -2016,7 +2029,7 @@ class SSM:
         load_session(
             file_path=input_path,
             globals_dict=loaded_vars,
-            format=input_format,
+            format=cast(Optional[SessionFormat], input_format),
             use_ssm=False,  # 循環参照を避けるため
         )
 
@@ -2024,7 +2037,7 @@ class SSM:
         save_session(
             file_path=output_path,
             globals_dict=loaded_vars,
-            format=output_format,
+            format=cast(Optional[SessionFormat], output_format),
             compress=compress,
             use_ssm=False,  # 循環参照を避けるため
         )
@@ -2106,7 +2119,7 @@ class SSM:
             return env_key
         try:
             config = self._read_json(self.ssm_path / self.CONFIG_FILE)
-            return config.get("sign_key")
+            return cast(Optional[str], config.get("sign_key"))
         except Exception:
             return None
 
@@ -2327,7 +2340,7 @@ class SSM:
         self._ensure_initialized()
 
         config = self._read_json(self.ssm_path / self.CONFIG_FILE)
-        return config.get("current_branch")
+        return cast(Optional[str], config.get("current_branch"))
 
     # ========== マージ機能 ==========
 
@@ -2483,9 +2496,9 @@ class SSM:
             self._write_text_atomic(head_file, merge_hash)
 
             # ブランチを更新
-            current_branch = self.get_current_branch()
-            if current_branch:
-                branch_file = self.ssm_path / self.BRANCHES_DIR / current_branch
+            target_branch = self.get_current_branch()
+            if target_branch:
+                branch_file = self.ssm_path / self.BRANCHES_DIR / target_branch
                 self._write_text_atomic(branch_file, merge_hash)
 
         info_msg = i18n.translate("info.merge_completed", branch_name=branch_name, commit=merge_hash[:7])

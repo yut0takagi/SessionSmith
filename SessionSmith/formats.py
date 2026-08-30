@@ -5,7 +5,7 @@
 import json
 import warnings
 from pathlib import Path
-from typing import Any, Optional, Union
+from typing import Any, Literal, Optional, Union, cast
 
 # オプショナル依存のインポート
 try:
@@ -34,6 +34,10 @@ except ImportError:
 
 # サポートされている形式
 SUPPORTED_FORMATS = ["pickle", "json", "msgpack", "hdf5"]
+
+# 公開APIのシグネチャで使う形式の型エイリアス。
+# 実行時の検証は detect_format() が行う（未対応の値は ValueError）。
+SessionFormat = Literal["pickle", "json", "msgpack", "hdf5"]
 
 # 形式と拡張子のマッピング
 FORMAT_EXTENSIONS = {
@@ -206,16 +210,18 @@ def load_pickle(file_path: Path) -> dict[str, Any]:
     import pickle
 
     # 圧縮形式を自動検出
+    # pickle.load() / convert_from_serializable() は Any を返すため、
+    # 保存時の型（セッション辞書）であることを cast で明示する。
     try:
         with gzip.open(str(file_path), 'rb') as f:
-            return pickle.load(f)
+            return cast(dict[str, Any], pickle.load(f))
     except (OSError, gzip.BadGzipFile, EOFError):
         try:
             with bz2.open(str(file_path), 'rb') as f:
-                return pickle.load(f)
+                return cast(dict[str, Any], pickle.load(f))
         except (OSError, EOFError):
             with open(str(file_path), 'rb') as f:
-                return pickle.load(f)
+                return cast(dict[str, Any], pickle.load(f))
 
 
 def save_json(session: dict[str, Any], file_path: Path, compress: Optional[str] = None) -> None:
@@ -258,7 +264,7 @@ def load_json(file_path: Path) -> dict[str, Any]:
                 data = json.load(f)
 
     # NumPy/Pandasオブジェクトに復元
-    return convert_from_serializable(data)
+    return cast(dict[str, Any], convert_from_serializable(data))
 
 
 def save_msgpack(session: dict[str, Any], file_path: Path, compress: Optional[str] = None) -> None:
@@ -312,7 +318,7 @@ def load_msgpack(file_path: Path) -> dict[str, Any]:
                 data = msgpack.unpackb(f.read(), raw=False)
 
     # NumPy/Pandasオブジェクトに復元
-    return convert_from_serializable(data)
+    return cast(dict[str, Any], convert_from_serializable(data))
 
 
 def save_hdf5(session: dict[str, Any], file_path: Path, compress: Optional[str] = None) -> None:

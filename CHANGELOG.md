@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- mypy の CI ゲートを `SessionSmith/` 全モジュールに拡大 (#27 の残作業)
+  - `ssm` / `cli` / `formats` / `manager` / `remote_backends` の `ignore_errors` を削除し、
+    既存の型エラー30件をすべて解消
+  - `pyproject.toml` の overrides に残るのは、型スタブを提供していないサードパーティ依存の
+    `ignore_missing_imports` のみ
+  - 公開シグネチャ用に `SessionFormat`（`Literal["pickle", "json", "msgpack", "hdf5"]`）を
+    `SessionSmith/formats.py` に追加
+- CI のカバレッジしきい値を 30% → 40% に引き上げ（実測 約43.6%）
+- CI のテストマトリクスに `windows-latest`（Python 3.12）を追加
+  - OS 依存の実装（`ProcessLock` / アトミック書き込み / パス検証）の動作確認が目的
+  - 全ステップのシェルを bash に統一（Windows の既定 pwsh では `rm -rf` や
+    `dist/*.whl` のグロブが動かないため）
+
+### Fixed
+
+- `SSM._signal_handler` が、元のシグナルハンドラが `SIG_IGN`（整数の 1）だった場合に
+  `1(signum, frame)` を呼び出して `TypeError` になる問題を修正
+  （真偽値ではなく `callable()` で確認するように変更。`SIG_DFL` は 0 のため従来も呼ばれなかった）
+
 ## [2.2.0] - 2026-08-30
 
 ### Added

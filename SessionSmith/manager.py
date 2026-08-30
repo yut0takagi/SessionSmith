@@ -11,9 +11,10 @@ import threading
 import time
 import warnings
 from pathlib import Path
-from typing import Any, Callable, Optional, Union
+from typing import Any, Callable, Optional, Union, cast
 
 from .core import load_session, save_session
+from .formats import SessionFormat
 from .jupyter_utils import is_jupyter_environment, is_jupyter_internal_var
 
 
@@ -49,7 +50,7 @@ class SessionManager:
         self._auto_save_interval = 300  # デフォルト5分
         self._auto_save_path = "session_autosave.pkl"
         self._auto_save_exclude: Optional[list[str]] = None
-        self._auto_save_compress = False
+        self._auto_save_compress: Union[bool, str] = False
         self._auto_save_metadata = True
 
         # 現在のセッションファイル
@@ -148,7 +149,8 @@ class SessionManager:
             on_error=on_error,
             serializer=serializer,
             exclude_jupyter=exclude_jupyter,
-            format=format,
+            # 未対応の値は core 側の detect_format() が ValueError を送出する
+            format=cast(Optional[SessionFormat], format),
         )
 
         self._current_session_file = file_path
@@ -179,7 +181,8 @@ class SessionManager:
             include=include,
             exclude=exclude,
             verbose=verbose,
-            format=format,
+            # 未対応の値は core 側の detect_format() が ValueError を送出する
+            format=cast(Optional[SessionFormat], format),
         )
 
         # 現在のセッションファイルを更新

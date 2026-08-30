@@ -9,9 +9,10 @@ import pickle
 import types
 import warnings
 from pathlib import Path
-from typing import Any, Callable, Literal, Optional, Union
+from typing import Any, Callable, Optional, Union
 
 from .formats import (
+    SessionFormat,
     detect_format,
     load_hdf5,
     load_json,
@@ -154,7 +155,7 @@ def save_session(
     on_error: str = "skip",
     serializer: Optional[Callable[[Any], Any]] = None,
     exclude_jupyter: bool = True,
-    format: Optional[Literal["pickle", "json", "msgpack", "hdf5"]] = None,
+    format: Optional[SessionFormat] = None,
     use_ssm: bool = True,
 ) -> None:
     """
@@ -378,7 +379,7 @@ def load_session(
     include: Optional[list[str]] = None,
     exclude: Optional[list[str]] = None,
     verbose: bool = False,
-    format: Optional[Literal["pickle", "json", "msgpack", "hdf5"]] = None,
+    format: Optional[SessionFormat] = None,
     use_ssm: bool = True,
 ) -> dict[str, Any]:
     """

@@ -333,8 +333,10 @@ def cmd_watch(args):
                 import pickle
 
                 try:
-                    with gzip.open(snapshot_path, 'rb') as f:
-                        variables = pickle.load(f)
+                    # 同じ関数内の watch_log 書き込みと変数名が衝突しないよう
+                    # gzip 側は snapshot_file という名前にする
+                    with gzip.open(snapshot_path, 'rb') as snapshot_file:
+                        variables = pickle.load(snapshot_file)
 
                     log_entry["variable_count"] = len(variables)
                     log_entry["variables"] = {
