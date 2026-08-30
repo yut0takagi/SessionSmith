@@ -111,6 +111,8 @@ class TestNonAsciiCommitMessages:
         修正前は Windows で `UnicodeDecodeError`（`ValueError` のサブクラス）が
         except 節に握りつぶされ、そのコミットが黙ってスキップされていた。
         """
+        import json
+
         resource_manager = pytest.importorskip(
             "SessionSmith.resource_manager", reason="ResourceManager is optional"
         )
@@ -119,8 +121,17 @@ class TestNonAsciiCommitMessages:
         commit_file = tmp_path / ".ssm" / "commits" / f"{commit_hash}.json"
         assert commit_file.exists()
 
+        # タイムスタンプを十分過去に書き換える。
+        # 「作成直後のコミットを commits_days=0 で消す」形にすると、時計の分解能が
+        # 粗い環境（Windows）で commit_time == cutoff_time になり `<` が成立しない。
+        # 日本語メッセージは残したまま、_write_json() と同じ書き方で保存し直す。
+        commit_data = json.loads(commit_file.read_text(encoding="utf-8"))
+        commit_data["timestamp"] = "2000-01-01T00:00:00"
+        with open(commit_file, "w", encoding="utf-8") as f:
+            json.dump(commit_data, f, indent=2, ensure_ascii=False, default=str)
+        assert "初期コミット".encode() in commit_file.read_bytes()
+
         manager = resource_manager.ResourceManager(tmp_path / ".ssm")
-        # commits_days=0 -> 現在時刻より古いコミットがすべて対象
-        manager.cleanup_old_files(commits_days=0)
+        manager.cleanup_old_files(commits_days=1)
 
         assert not commit_file.exists(), "日本語コミットがクリーンアップされなかった"
