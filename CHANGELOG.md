@@ -12,6 +12,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - テストカバレッジを 43.6% → 50.0% に引き上げ、CI のしきい値を 40% → 45% に更新
   - `utils` 7% → 76%、`compare` 8% → 79%、`info` 10% → 66%、`tracer` 9% → 57%
   - 追加: `tests/test_utils.py` / `tests/test_info_and_compare.py` / `tests/test_tracer.py`
+- GitHub Actions を Node.js 24 対応のバージョンへ更新
+  - `actions/checkout` v4 → v7、`actions/setup-python` v5 → v7、
+    `actions/upload-artifact` v4 → v7、`actions/setup-node` v4 → v7、
+    `softprops/action-gh-release` v1 → v3
+  - Node.js 20 は非推奨で、実行時は Node.js 24 に強制されたうえで警告が出ていた
+    （`softprops/action-gh-release@v1` に至っては Node.js 16 のままだった）
+  - いずれのメジャーアップも実体は Node ランタイムの更新で、入力の互換性は維持されている
 
 ### Fixed
 

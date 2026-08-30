@@ -30,7 +30,7 @@ jobs:
     steps:
       # タグではなく main を明示的にチェックアウトする（コミット先が main のため）
       - name: Checkout main
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: main
           fetch-depth: 0
