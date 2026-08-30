@@ -8,6 +8,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional, Union
 
+from ._console import safe_print
+
 
 def _load_session_file(file_path: Union[str, Path], format: Optional[str] = None) -> tuple[dict[str, Any], Optional[str]]:
     """
@@ -152,23 +154,23 @@ def print_session_info(file_path: Union[str, Path]) -> None:
     try:
         info = get_session_info(file_path)
     except Exception as e:
-        print(f"Error loading session info: {e}")
+        safe_print(f"Error loading session info: {e}")
         raise
 
-    print(f"Session File: {info['file_path']}")
-    print(f"File Size: {info['file_size']:,} bytes")
+    safe_print(f"Session File: {info['file_path']}")
+    safe_print(f"File Size: {info['file_size']:,} bytes")
     if info['compression']:
-        print(f"Compression: {info['compression']}")
-    print(f"Modified: {info['modified_time']}")
-    print(f"Variables: {info['variable_count']}")
-    print(f"Total Data Size: {info['total_data_size']:,} bytes")
+        safe_print(f"Compression: {info['compression']}")
+    safe_print(f"Modified: {info['modified_time']}")
+    safe_print(f"Variables: {info['variable_count']}")
+    safe_print(f"Total Data Size: {info['total_data_size']:,} bytes")
 
     if info['metadata']:
-        print("\nMetadata:")
+        safe_print("\nMetadata:")
         for k, v in info['metadata'].items():
-            print(f"  {k}: {v}")
+            safe_print(f"  {k}: {v}")
 
-    print("\nVariables:")
+    safe_print("\nVariables:")
     for var in info['variables']:
         size_str = f"{var['size']:,} bytes" if var['size'] is not None else "unknown size"
-        print(f"  {var['name']:20s} ({var['type']:15s}) - {size_str}")
+        safe_print(f"  {var['name']:20s} ({var['type']:15s}) - {size_str}")

@@ -6,6 +6,7 @@ import warnings
 from pathlib import Path
 from typing import Any, Union
 
+from ._console import safe_print
 from .core import load_session
 from .info import list_session_variables
 
@@ -124,29 +125,29 @@ def print_comparison(
     try:
         result = compare_sessions(file_path1, file_path2, detailed=detailed)
     except Exception as e:
-        print(f"Error comparing sessions: {e}")
+        safe_print(f"Error comparing sessions: {e}")
         raise
 
-    print(f"Comparison: {result['file1']} vs {result['file2']}\n")
+    safe_print(f"Comparison: {result['file1']} vs {result['file2']}\n")
 
     if result['common_variables']:
-        print(f"Common variables ({len(result['common_variables'])}):")
+        safe_print(f"Common variables ({len(result['common_variables'])}):")
         for var in result['common_variables']:
-            print(f"  {var}")
+            safe_print(f"  {var}")
     else:
-        print("Common variables: None")
+        safe_print("Common variables: None")
 
     if result['added_variables']:
-        print(f"\nAdded variables ({len(result['added_variables'])}):")
+        safe_print(f"\nAdded variables ({len(result['added_variables'])}):")
         for var in result['added_variables']:
-            print(f"  + {var}")
+            safe_print(f"  + {var}")
 
     if result['removed_variables']:
-        print(f"\nRemoved variables ({len(result['removed_variables'])}):")
+        safe_print(f"\nRemoved variables ({len(result['removed_variables'])}):")
         for var in result['removed_variables']:
-            print(f"  - {var}")
+            safe_print(f"  - {var}")
 
     if detailed and result.get('changed_variables'):
-        print(f"\nChanged variables ({len(result['changed_variables'])}):")
+        safe_print(f"\nChanged variables ({len(result['changed_variables'])}):")
         for var in result['changed_variables']:
-            print(f"  ~ {var}")
+            safe_print(f"  ~ {var}")

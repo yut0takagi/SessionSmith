@@ -11,6 +11,7 @@ import warnings
 from pathlib import Path
 from typing import Any, Callable, Optional, Union
 
+from ._console import safe_print
 from .formats import (
     SessionFormat,
     detect_format,
@@ -224,7 +225,7 @@ def save_session(
             commit_hash = ssm_module.commit(commit_message)
 
             if verbose:
-                print(f"✓ Session saved to SSM (commit: {commit_hash[:7]})")
+                safe_print(f"✓ Session saved to SSM (commit: {commit_hash[:7]})")
 
             # 必要に応じて、指定されたファイルパスにもエクスポート
             if file_path:
@@ -232,7 +233,7 @@ def save_session(
                     ssm_module.export(file_path, commit_hash=commit_hash, format=format, compress=compress)
                     if verbose:
                         file_size = os.path.getsize(str(file_path))
-                        print(f"✓ Also exported to {file_path} ({file_size:,} bytes)")
+                        safe_print(f"✓ Also exported to {file_path} ({file_size:,} bytes)")
                 except Exception as e:
                     if verbose:
                         logger.warning(f"Failed to export to {file_path}: {e}")
@@ -310,7 +311,7 @@ def save_session(
                     pickle.dumps(v, protocol=protocol)
                     session[k] = v
                     if verbose:
-                        print(f"Saved variable: {k} ({type(v).__name__})")
+                        safe_print(f"Saved variable: {k} ({type(v).__name__})")
                 except (pickle.PicklingError, TypeError) as e:
                     error_msg = f"Failed to pickle variable '{k}': {str(e)}"
                     errors.append(error_msg)
@@ -322,7 +323,7 @@ def save_session(
                 # JSON/MessagePack/HDF5形式の場合はそのまま追加（変換は保存時に実行）
                 session[k] = v
                 if verbose:
-                    print(f"Saved variable: {k} ({type(v).__name__})")
+                    safe_print(f"Saved variable: {k} ({type(v).__name__})")
 
         except Exception as e:
             error_msg = f"Unexpected error saving variable '{k}': {str(e)}"
@@ -362,7 +363,7 @@ def save_session(
 
         if verbose:
             file_size = os.path.getsize(str(file_path))
-            print(f"Session saved to {file_path} ({file_size:,} bytes, format: {detected_format})")
+            safe_print(f"Session saved to {file_path} ({file_size:,} bytes, format: {detected_format})")
 
     except OSError as e:
         raise OSError(f"Failed to save session to {file_path}: {str(e)}") from e
@@ -370,7 +371,7 @@ def save_session(
         raise RuntimeError(f"Unexpected error saving session: {str(e)}") from e
 
     if verbose and errors:
-        print(f"Warnings: {len(errors)} variables could not be saved")
+        safe_print(f"Warnings: {len(errors)} variables could not be saved")
 
 
 def load_session(
@@ -432,7 +433,7 @@ def load_session(
                 # ファイルが存在する場合はインポートしてから読み込み
                 if file_path_obj.exists():
                     if verbose:
-                        print(f"Importing {file_path} to SSM...")
+                        safe_print(f"Importing {file_path} to SSM...")
 
                     commit_hash = ssm_module.import_session(
                         str(file_path),
@@ -441,19 +442,19 @@ def load_session(
                     )
 
                     if verbose:
-                        print(f"✓ Imported to SSM (commit: {commit_hash[:7]})")
+                        safe_print(f"✓ Imported to SSM (commit: {commit_hash[:7]})")
 
                     # インポートしたコミットから復元
                     ssm_module.checkout(commit_hash)
                 else:
                     # ファイルが存在しない場合はSSMの最新コミットから読み込み
                     if verbose:
-                        print("File not found, loading from SSM latest commit...")
+                        safe_print("File not found, loading from SSM latest commit...")
                     ssm_module.checkout()
             else:
                 # ファイルパスが指定されていない場合は最新コミットから読み込み
                 if verbose:
-                    print("Loading from SSM latest commit...")
+                    safe_print("Loading from SSM latest commit...")
                 ssm_module.checkout()
 
             # グローバル変数辞書を取得
@@ -475,7 +476,7 @@ def load_session(
                 loaded_vars[name] = value
 
             if verbose:
-                print(f"✓ Loaded {len(loaded_vars)} variables from SSM")
+                safe_print(f"✓ Loaded {len(loaded_vars)} variables from SSM")
 
             return loaded_vars
 
@@ -536,8 +537,8 @@ def load_session(
     # メタデータを除外
     metadata = session.pop("__metadata__", None)
     if metadata and verbose:
-        print(f"Session metadata: {metadata}")
-        print(f"Format: {detected_format}")
+        safe_print(f"Session metadata: {metadata}")
+        safe_print(f"Format: {detected_format}")
 
     # フィルタリング
     if include:
@@ -552,12 +553,12 @@ def load_session(
             globals_dict[k] = v
             loaded_names.append(k)
             if verbose:
-                print(f"Loaded variable: {k} ({type(v).__name__})")
+                safe_print(f"Loaded variable: {k} ({type(v).__name__})")
         except Exception as e:
             if verbose:
                 warnings.warn(f"Failed to load variable '{k}': {str(e)}", UserWarning, stacklevel=2)
 
     if verbose:
-        print(f"Loaded {len(loaded_names)} variables")
+        safe_print(f"Loaded {len(loaded_names)} variables")
 
     return session

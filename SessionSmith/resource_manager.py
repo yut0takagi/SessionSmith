@@ -21,6 +21,7 @@ except ImportError:
     psutil = None
 
 from . import i18n
+from ._console import safe_print
 from .exceptions import MemoryLimitError, StorageLimitError
 
 logger = logging.getLogger("SessionSmith.resource_manager")
@@ -120,7 +121,7 @@ class ResourceManager:
                     free_mb=free_mb
                 )
                 logger.critical(warn_msg)
-                print(f"⚠️ {warn_msg}")
+                safe_print(f"⚠️ {warn_msg}")
             elif usage_percent >= self.DISK_WARNING_THRESHOLD_PERCENT:
                 warn_msg = i18n.translate(
                     "warn.disk_warning",
@@ -128,7 +129,7 @@ class ResourceManager:
                     free_mb=free_mb
                 )
                 logger.warning(warn_msg)
-                print(f"⚠️ {warn_msg}")
+                safe_print(f"⚠️ {warn_msg}")
 
             return {
                 "total_mb": total_mb,
@@ -229,7 +230,7 @@ class ResourceManager:
                     available_mb=available_mb
                 )
                 logger.critical(warn_msg)
-                print(f"⚠️ {warn_msg}")
+                safe_print(f"⚠️ {warn_msg}")
             elif usage_percent >= self.MEMORY_WARNING_THRESHOLD_PERCENT:
                 warn_msg = i18n.translate(
                     "warn.memory_warning",
@@ -238,7 +239,7 @@ class ResourceManager:
                     available_mb=available_mb
                 )
                 logger.warning(warn_msg)
-                print(f"⚠️ {warn_msg}")
+                safe_print(f"⚠️ {warn_msg}")
 
             return {
                 "total_mb": total_mb,
@@ -314,7 +315,7 @@ class ResourceManager:
         if freed_mb > 0:
             info_msg = i18n.translate("info.cleanup_completed", freed_mb=freed_mb)
             logger.info(info_msg)
-            print(f"✓ {info_msg}")
+            safe_print(f"✓ {info_msg}")
 
         return freed_mb
 

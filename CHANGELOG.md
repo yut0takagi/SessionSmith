@@ -24,6 +24,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Windows のコンソールで出力時にクラッシュする問題を修正**
+  - `ssm.commit()` などが出力する `✓` や日本語メッセージが、Windows の既定コンソール
+    （`cp1252` など）で `UnicodeEncodeError` になり処理全体が落ちていた
+  - 端末が表現できない文字を置換して出力を継続する `SessionSmith/_console.py` の
+    `safe_print()` を追加し、パッケージ内の `print()` 229箇所を置き換え
+  - 回帰テスト: `tests/test_console.py`
 - `SSM._signal_handler` が、元のシグナルハンドラが `SIG_IGN`（整数の 1）だった場合に
   `1(signum, frame)` を呼び出して `TypeError` になる問題を修正
   （真偽値ではなく `callable()` で確認するように変更。`SIG_DFL` は 0 のため従来も呼ばれなかった）

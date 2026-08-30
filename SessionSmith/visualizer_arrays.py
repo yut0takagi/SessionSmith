@@ -6,6 +6,8 @@ import warnings
 from pathlib import Path
 from typing import Any, Optional, Union
 
+from ._console import safe_print
+
 try:
     import matplotlib.animation as anim_module
     import matplotlib.pyplot as plt
@@ -178,16 +180,16 @@ def visualize_arrays(
                 if output_file.suffix == '.gif':
                     try:
                         anim.save(str(output_file), writer='pillow', fps=1000/interval)
-                        print(f"Animation saved to {output_file}")
+                        safe_print(f"Animation saved to {output_file}")
                     except Exception as e:
-                        print(f"Failed to save GIF: {e}")
-                        print("Trying to save as HTML instead...")
+                        safe_print(f"Failed to save GIF: {e}")
+                        safe_print("Trying to save as HTML instead...")
                         try:
                             html = anim.to_jshtml()
                             html_file = output_file.with_suffix('.html')
                             with open(str(html_file), 'w') as f:
                                 f.write(html)
-                            print(f"Animation saved to {html_file}")
+                            safe_print(f"Animation saved to {html_file}")
                         except Exception as e2:
                             raise OSError(f"Failed to save animation: {str(e2)}") from e2
                 elif output_file.suffix == '.html':
@@ -195,7 +197,7 @@ def visualize_arrays(
                         html = anim.to_jshtml()
                         with open(str(output_file), 'w') as f:
                             f.write(html)
-                        print(f"Animation saved to {output_file}")
+                        safe_print(f"Animation saved to {output_file}")
                     except Exception as e:
                         raise OSError(f"Failed to save HTML: {str(e)}") from e
                 else:
@@ -204,7 +206,7 @@ def visualize_arrays(
                     html = anim.to_jshtml()
                     with open(str(html_file), 'w') as f:
                         f.write(html)
-                    print(f"Animation saved to {html_file}")
+                    safe_print(f"Animation saved to {html_file}")
             if show:
                 plt.show()
         except Exception as e:
@@ -218,7 +220,7 @@ def visualize_arrays(
                 output_file = Path(output_file)
                 output_file.parent.mkdir(parents=True, exist_ok=True)
                 plt.savefig(str(output_file), dpi=150, bbox_inches='tight')
-                print(f"Plot saved to {output_file}")
+                safe_print(f"Plot saved to {output_file}")
             if show:
                 plt.show()
         except Exception as e:

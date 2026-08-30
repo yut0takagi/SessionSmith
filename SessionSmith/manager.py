@@ -13,6 +13,7 @@ import warnings
 from pathlib import Path
 from typing import Any, Callable, Optional, Union, cast
 
+from ._console import safe_print
 from .core import load_session, save_session
 from .formats import SessionFormat
 from .jupyter_utils import is_jupyter_environment, is_jupyter_internal_var
@@ -244,8 +245,8 @@ class SessionManager:
             ip.events.register('post_run_cell', self._continuous_save_callback)
 
             if verbose:
-                print(f"✓ Continuous save enabled: {file_path}")
-                print("  Sessions will be saved after each cell execution.")
+                safe_print(f"✓ Continuous save enabled: {file_path}")
+                safe_print("  Sessions will be saved after each cell execution.")
         except Exception as e:
             warnings.warn(f"Failed to enable continuous save: {e}", UserWarning, stacklevel=2)
             self._continuous_save_enabled = False
@@ -268,7 +269,7 @@ class SessionManager:
                 metadata=True,
             )
             if self._continuous_save_verbose:
-                print(f"  ✓ Auto-saved to {self._continuous_save_path}")
+                safe_print(f"  ✓ Auto-saved to {self._continuous_save_path}")
         except Exception as e:
             if self._continuous_save_on_error == "warn":
                 warnings.warn(f"Continuous save failed: {e}", UserWarning, stacklevel=2)
@@ -296,7 +297,7 @@ class SessionManager:
         self._unregister_continuous_save_hook()
 
         if was_enabled and self._continuous_save_verbose:
-            print("✓ Continuous save disabled")
+            safe_print("✓ Continuous save disabled")
 
     def is_continuous_save_enabled(self) -> bool:
         """

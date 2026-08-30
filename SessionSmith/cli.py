@@ -23,6 +23,7 @@ from datetime import datetime
 from typing import Any, Optional
 
 # SSMモジュールをインポート
+from ._console import safe_print
 from .ssm import SSM
 
 
@@ -42,7 +43,7 @@ def cmd_commit(args):
     ssm = get_ssm()
 
     if not ssm.is_initialized:
-        print("Error: SSM not initialized. Run 'ssm init' first.", file=sys.stderr)
+        safe_print("Error: SSM not initialized. Run 'ssm init' first.", file=sys.stderr)
         sys.exit(1)
 
     # CLIからはグローバル変数を取得できないので、
@@ -50,7 +51,7 @@ def cmd_commit(args):
     snapshot_path = ssm.ssm_path / "snapshots" / "latest"
 
     if not snapshot_path.exists():
-        print("Error: No snapshot found. Run 'ssm watch' first to capture variables.", file=sys.stderr)
+        safe_print("Error: No snapshot found. Run 'ssm watch' first to capture variables.", file=sys.stderr)
         sys.exit(1)
 
     # スナップショットを読み込んでコミット
@@ -96,7 +97,7 @@ def cmd_commit(args):
 
     var_count = len(variables)
     short_hash = commit_hash[:7]
-    print(f"✓ [{short_hash}] {args.message or 'CLI commit'} ({var_count} variables)")
+    safe_print(f"✓ [{short_hash}] {args.message or 'CLI commit'} ({var_count} variables)")
 
 
 def cmd_log(args):
@@ -104,14 +105,14 @@ def cmd_log(args):
     ssm = get_ssm()
 
     if not ssm.is_initialized:
-        print("Error: SSM not initialized. Run 'ssm init' first.", file=sys.stderr)
+        safe_print("Error: SSM not initialized. Run 'ssm init' first.", file=sys.stderr)
         sys.exit(1)
 
     head_file = ssm.ssm_path / "HEAD"
     current = head_file.read_text().strip()
 
     if not current:
-        print("No commits yet")
+        safe_print("No commits yet")
         return
 
     count = 0
@@ -126,13 +127,13 @@ def cmd_log(args):
         var_count = len(commit_data.get("variables", {}))
 
         if args.oneline:
-            print(f"{current[:7]} {commit_data['message']} ({var_count} vars)")
+            safe_print(f"{current[:7]} {commit_data['message']} ({var_count} vars)")
         else:
-            print(f"\n\033[33mcommit {current}\033[0m")
-            print(f"Author: {commit_data['author']}")
-            print(f"Date:   {commit_data['timestamp']}")
-            print(f"\n    {commit_data['message']}")
-            print(f"    ({var_count} variables)")
+            safe_print(f"\n\033[33mcommit {current}\033[0m")
+            safe_print(f"Author: {commit_data['author']}")
+            safe_print(f"Date:   {commit_data['timestamp']}")
+            safe_print(f"\n    {commit_data['message']}")
+            safe_print(f"    ({var_count} variables)")
 
         current = commit_data.get("parent")
         count += 1
@@ -143,13 +144,13 @@ def cmd_status(args):
     ssm = get_ssm()
 
     if not ssm.is_initialized:
-        print("Error: SSM not initialized. Run 'ssm init' first.", file=sys.stderr)
+        safe_print("Error: SSM not initialized. Run 'ssm init' first.", file=sys.stderr)
         sys.exit(1)
 
     head_file = ssm.ssm_path / "HEAD"
     current = head_file.read_text().strip()
 
-    print(f"On commit: {current[:7] if current else '(none)'}")
+    safe_print(f"On commit: {current[:7] if current else '(none)'}")
 
     # 最新スナップショットの情報
     snapshot_path = ssm.ssm_path / "snapshots" / "latest"
@@ -161,22 +162,22 @@ def cmd_status(args):
             variables = pickle.load(f)
 
         mtime = datetime.fromtimestamp(snapshot_path.stat().st_mtime)
-        print(f"Last snapshot: {mtime.strftime('%Y-%m-%d %H:%M:%S')}")
-        print(f"Variables: {len(variables)}")
+        safe_print(f"Last snapshot: {mtime.strftime('%Y-%m-%d %H:%M:%S')}")
+        safe_print(f"Variables: {len(variables)}")
 
         if args.verbose:
-            print("\nTracked variables:")
+            safe_print("\nTracked variables:")
             for name, value in sorted(variables.items()):
                 type_name = type(value).__name__
-                print(f"  {name}: {type_name}")
+                safe_print(f"  {name}: {type_name}")
     else:
-        print("No snapshot yet")
+        safe_print("No snapshot yet")
 
     # 監視状態
     watch_pid_file = ssm.ssm_path / "watch.pid"
     if watch_pid_file.exists():
         pid = watch_pid_file.read_text().strip()
-        print(f"Watch process: PID {pid}")
+        safe_print(f"Watch process: PID {pid}")
 
 
 def cmd_checkout(args):
@@ -184,7 +185,7 @@ def cmd_checkout(args):
     ssm = get_ssm()
 
     if not ssm.is_initialized:
-        print("Error: SSM not initialized. Run 'ssm init' first.", file=sys.stderr)
+        safe_print("Error: SSM not initialized. Run 'ssm init' first.", file=sys.stderr)
         sys.exit(1)
 
     commit_hash = args.commit
@@ -194,7 +195,7 @@ def cmd_checkout(args):
         head_file = ssm.ssm_path / "HEAD"
         commit_hash = head_file.read_text().strip()
         if not commit_hash:
-            print("Error: No commits to checkout", file=sys.stderr)
+            safe_print("Error: No commits to checkout", file=sys.stderr)
             sys.exit(1)
 
     # 短縮ハッシュを展開
@@ -202,7 +203,7 @@ def cmd_checkout(args):
 
     commit_path = ssm.ssm_path / "commits" / f"{full_hash}.json"
     if not commit_path.exists():
-        print(f"Error: Commit not found: {commit_hash}", file=sys.stderr)
+        safe_print(f"Error: Commit not found: {commit_hash}", file=sys.stderr)
         sys.exit(1)
 
     commit_data = ssm._read_json(commit_path)
@@ -218,15 +219,15 @@ def cmd_checkout(args):
             value = pickle.loads(data)
             variables[name] = value
         except Exception as e:
-            print(f"Warning: Failed to restore '{name}': {e}", file=sys.stderr)
+            safe_print(f"Warning: Failed to restore '{name}': {e}", file=sys.stderr)
 
     # スナップショットに保存
     snapshot_path = ssm.ssm_path / "snapshots" / "latest"
     with gzip.open(snapshot_path, 'wb') as f:
         pickle.dump(variables, f)
 
-    print(f"✓ Restored {len(variables)} variables from {full_hash[:7]}")
-    print(f"  Snapshot saved to: {snapshot_path}")
+    safe_print(f"✓ Restored {len(variables)} variables from {full_hash[:7]}")
+    safe_print(f"  Snapshot saved to: {snapshot_path}")
 
 
 def cmd_diff(args):
@@ -234,20 +235,20 @@ def cmd_diff(args):
     ssm = get_ssm()
 
     if not ssm.is_initialized:
-        print("Error: SSM not initialized. Run 'ssm init' first.", file=sys.stderr)
+        safe_print("Error: SSM not initialized. Run 'ssm init' first.", file=sys.stderr)
         sys.exit(1)
 
     head_file = ssm.ssm_path / "HEAD"
     current = head_file.read_text().strip()
 
     if not current:
-        print("No commits to compare")
+        safe_print("No commits to compare")
         return
 
     # 最新スナップショットとコミットを比較
     snapshot_path = ssm.ssm_path / "snapshots" / "latest"
     if not snapshot_path.exists():
-        print("No snapshot to compare")
+        safe_print("No snapshot to compare")
         return
 
     import gzip
@@ -265,17 +266,17 @@ def cmd_diff(args):
     removed = committed_vars - current_vars
 
     if added:
-        print("\033[32mNew variables:\033[0m")
+        safe_print("\033[32mNew variables:\033[0m")
         for name in sorted(added):
-            print(f"  + {name}")
+            safe_print(f"  + {name}")
 
     if removed:
-        print("\033[31mRemoved variables:\033[0m")
+        safe_print("\033[31mRemoved variables:\033[0m")
         for name in sorted(removed):
-            print(f"  - {name}")
+            safe_print(f"  - {name}")
 
     if not added and not removed:
-        print("No changes")
+        safe_print("No changes")
 
 
 def cmd_watch(args):
@@ -283,15 +284,15 @@ def cmd_watch(args):
     ssm = get_ssm()
 
     if not ssm.is_initialized:
-        print("Error: SSM not initialized. Run 'ssm init' first.", file=sys.stderr)
+        safe_print("Error: SSM not initialized. Run 'ssm init' first.", file=sys.stderr)
         sys.exit(1)
 
     interval = args.interval
     target = args.target or "."
 
-    print(f"Watching: {target}")
-    print(f"Interval: {interval} seconds")
-    print("Press Ctrl+C to stop\n")
+    safe_print(f"Watching: {target}")
+    safe_print(f"Interval: {interval} seconds")
+    safe_print("Press Ctrl+C to stop\n")
 
     # PIDファイルを作成
     watch_pid_file = ssm.ssm_path / "watch.pid"
@@ -303,7 +304,7 @@ def cmd_watch(args):
     def cleanup(signum=None, frame=None):
         if watch_pid_file.exists():
             watch_pid_file.unlink()
-        print("\n✓ Watch stopped")
+        safe_print("\n✓ Watch stopped")
         sys.exit(0)
 
     signal.signal(signal.SIGINT, cleanup)
@@ -355,7 +356,7 @@ def cmd_watch(args):
 
             snapshot_count += 1
             var_count = log_entry.get("variable_count", 0)
-            print(f"[{timestamp.strftime('%H:%M:%S')}] Snapshot #{snapshot_count}: {var_count} variables")
+            safe_print(f"[{timestamp.strftime('%H:%M:%S')}] Snapshot #{snapshot_count}: {var_count} variables")
 
             time.sleep(interval)
 
@@ -368,13 +369,13 @@ def cmd_stats(args):
     ssm = get_ssm()
 
     if not ssm.is_initialized:
-        print("Error: SSM not initialized. Run 'ssm init' first.", file=sys.stderr)
+        safe_print("Error: SSM not initialized. Run 'ssm init' first.", file=sys.stderr)
         sys.exit(1)
 
     watch_log = ssm.ssm_path / "watch.log"
 
     if not watch_log.exists():
-        print("No watch data found. Run 'ssm watch' first.", file=sys.stderr)
+        safe_print("No watch data found. Run 'ssm watch' first.", file=sys.stderr)
         sys.exit(1)
 
     # ログを読み込み
@@ -387,20 +388,20 @@ def cmd_stats(args):
                 continue
 
     if not entries:
-        print("No data in watch log")
+        safe_print("No data in watch log")
         return
 
-    print("Watch Log Analysis")
-    print("=" * 50)
-    print(f"Total snapshots: {len(entries)}")
+    safe_print("Watch Log Analysis")
+    safe_print("=" * 50)
+    safe_print(f"Total snapshots: {len(entries)}")
 
     if entries:
         first = datetime.fromisoformat(entries[0]["timestamp"])
         last = datetime.fromisoformat(entries[-1]["timestamp"])
         duration = last - first
-        print(f"Duration: {duration}")
-        print(f"First: {first.strftime('%Y-%m-%d %H:%M:%S')}")
-        print(f"Last:  {last.strftime('%Y-%m-%d %H:%M:%S')}")
+        safe_print(f"Duration: {duration}")
+        safe_print(f"First: {first.strftime('%Y-%m-%d %H:%M:%S')}")
+        safe_print(f"Last:  {last.strftime('%Y-%m-%d %H:%M:%S')}")
 
     # 変数の統計
     all_vars: dict[str, list[dict]] = {}
@@ -417,20 +418,20 @@ def cmd_stats(args):
                 })
 
     if all_vars:
-        print(f"\nVariables tracked: {len(all_vars)}")
-        print(f"\n{'Variable':<20} {'Type':<15} {'Appearances':<12} {'Avg Size':<12}")
-        print("-" * 60)
+        safe_print(f"\nVariables tracked: {len(all_vars)}")
+        safe_print(f"\n{'Variable':<20} {'Type':<15} {'Appearances':<12} {'Avg Size':<12}")
+        safe_print("-" * 60)
 
         for name, records in sorted(all_vars.items()):
             var_type = records[-1]["type"]
             appearances = len(records)
             avg_size = sum(r["size"] for r in records) / len(records)
-            print(f"{name:<20} {var_type:<15} {appearances:<12} {avg_size:,.0f} bytes")
+            safe_print(f"{name:<20} {var_type:<15} {appearances:<12} {avg_size:,.0f} bytes")
 
     # グラフ表示（簡易ASCII）
     if args.graph and entries:
-        print("\nVariable Count Over Time")
-        print("-" * 50)
+        safe_print("\nVariable Count Over Time")
+        safe_print("-" * 50)
 
         counts = [e.get("variable_count", 0) for e in entries]
         max_count = max(counts) if counts else 0
@@ -439,7 +440,7 @@ def cmd_stats(args):
             for count in counts[-20:]:  # 最新20件
                 bar_len = int(count / max_count * 30)
                 bar = "█" * bar_len
-                print(f"{count:3d} |{bar}")
+                safe_print(f"{count:3d} |{bar}")
 
 
 def cmd_dashboard(args):
@@ -447,13 +448,13 @@ def cmd_dashboard(args):
     ssm = get_ssm()
 
     if not ssm.is_initialized:
-        print("Error: SSM not initialized. Run 'ssm init' first.", file=sys.stderr)
+        safe_print("Error: SSM not initialized. Run 'ssm init' first.", file=sys.stderr)
         sys.exit(1)
 
     port = args.port
 
-    print(f"Starting dashboard on http://localhost:{port}")
-    print("Press Ctrl+C to stop\n")
+    safe_print(f"Starting dashboard on http://localhost:{port}")
+    safe_print("Press Ctrl+C to stop\n")
 
     # 簡易HTTPサーバー
     import json
@@ -618,7 +619,7 @@ def cmd_dashboard(args):
         server = HTTPServer(("localhost", port), DashboardHandler)
         server.serve_forever()
     except KeyboardInterrupt:
-        print("\n✓ Dashboard stopped")
+        safe_print("\n✓ Dashboard stopped")
 
 
 def cmd_export(args):
@@ -626,7 +627,7 @@ def cmd_export(args):
     ssm = get_ssm()
 
     if not ssm.is_initialized:
-        print("Error: SSM not initialized. Run 'ssm init' first.", file=sys.stderr)
+        safe_print("Error: SSM not initialized. Run 'ssm init' first.", file=sys.stderr)
         sys.exit(1)
 
     output = args.output
@@ -635,7 +636,7 @@ def cmd_export(args):
     watch_log = ssm.ssm_path / "watch.log"
 
     if not watch_log.exists():
-        print("No watch data to export", file=sys.stderr)
+        safe_print("No watch data to export", file=sys.stderr)
         sys.exit(1)
 
     entries = []
@@ -657,7 +658,7 @@ def cmd_export(args):
             for entry in entries:
                 writer.writerow([entry["timestamp"], entry.get("variable_count", 0)])
 
-    print(f"✓ Exported to {output}")
+    safe_print(f"✓ Exported to {output}")
 
 
 def cmd_export_session(args):
@@ -665,7 +666,7 @@ def cmd_export_session(args):
     ssm = get_ssm()
 
     if not ssm.is_initialized:
-        print("Error: SSM not initialized. Run 'ssm init' first.", file=sys.stderr)
+        safe_print("Error: SSM not initialized. Run 'ssm init' first.", file=sys.stderr)
         sys.exit(1)
 
     try:
@@ -675,7 +676,7 @@ def cmd_export_session(args):
             compress=args.compress,
         )
     except Exception as e:
-        print(f"Error: {e}", file=sys.stderr)
+        safe_print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
 
 
@@ -684,7 +685,7 @@ def cmd_import_session(args):
     ssm = get_ssm()
 
     if not ssm.is_initialized:
-        print("Error: SSM not initialized. Run 'ssm init' first.", file=sys.stderr)
+        safe_print("Error: SSM not initialized. Run 'ssm init' first.", file=sys.stderr)
         sys.exit(1)
 
     try:
@@ -693,7 +694,7 @@ def cmd_import_session(args):
             message=args.message,
         )
     except Exception as e:
-        print(f"Error: {e}", file=sys.stderr)
+        safe_print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
 
 
@@ -709,7 +710,7 @@ def cmd_convert(args):
             compress=args.compress,
         )
     except Exception as e:
-        print(f"Error: {e}", file=sys.stderr)
+        safe_print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
 
 
@@ -718,25 +719,25 @@ def cmd_branch(args):
     ssm = get_ssm()
 
     if not ssm.is_initialized:
-        print("Error: SSM not initialized. Run 'ssm init' first.", file=sys.stderr)
+        safe_print("Error: SSM not initialized. Run 'ssm init' first.", file=sys.stderr)
         sys.exit(1)
 
     if args.create:
         if not args.name:
-            print("Error: Branch name required when creating a branch.", file=sys.stderr)
+            safe_print("Error: Branch name required when creating a branch.", file=sys.stderr)
             sys.exit(1)
         try:
             ssm.branch(args.name, create=True)
         except Exception as e:
-            print(f"Error: {e}", file=sys.stderr)
+            safe_print(f"Error: {e}", file=sys.stderr)
             sys.exit(1)
     elif args.name:
         # ブランチの存在確認
         branches = ssm.branch()
         if args.name in branches:
-            print(f"Branch '{args.name}' exists")
+            safe_print(f"Branch '{args.name}' exists")
         else:
-            print(f"Branch '{args.name}' does not exist", file=sys.stderr)
+            safe_print(f"Branch '{args.name}' does not exist", file=sys.stderr)
             sys.exit(1)
     else:
         # ブランチ一覧表示
@@ -744,11 +745,11 @@ def cmd_branch(args):
         current = ssm.get_current_branch()
 
         if not branches:
-            print("No branches")
+            safe_print("No branches")
         else:
             for branch_name in branches:
                 marker = "* " if branch_name == current else "  "
-                print(f"{marker}{branch_name}")
+                safe_print(f"{marker}{branch_name}")
 
 
 def cmd_checkout_branch(args):
@@ -756,13 +757,13 @@ def cmd_checkout_branch(args):
     ssm = get_ssm()
 
     if not ssm.is_initialized:
-        print("Error: SSM not initialized. Run 'ssm init' first.", file=sys.stderr)
+        safe_print("Error: SSM not initialized. Run 'ssm init' first.", file=sys.stderr)
         sys.exit(1)
 
     try:
         ssm.checkout_branch(args.branch)
     except Exception as e:
-        print(f"Error: {e}", file=sys.stderr)
+        safe_print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
 
 
@@ -771,13 +772,13 @@ def cmd_merge(args):
     ssm = get_ssm()
 
     if not ssm.is_initialized:
-        print("Error: SSM not initialized. Run 'ssm init' first.", file=sys.stderr)
+        safe_print("Error: SSM not initialized. Run 'ssm init' first.", file=sys.stderr)
         sys.exit(1)
 
     try:
         ssm.merge(args.branch, message=args.message)
     except Exception as e:
-        print(f"Error: {e}", file=sys.stderr)
+        safe_print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
 
 
@@ -786,26 +787,26 @@ def cmd_tag(args):
     ssm = get_ssm()
 
     if not ssm.is_initialized:
-        print("Error: SSM not initialized. Run 'ssm init' first.", file=sys.stderr)
+        safe_print("Error: SSM not initialized. Run 'ssm init' first.", file=sys.stderr)
         sys.exit(1)
 
     if args.list:
         # タグ一覧表示
         tags = ssm.list_tags()
         if not tags:
-            print("No tags")
+            safe_print("No tags")
         else:
             for tag_info in tags:
-                print(f"{tag_info['name']} -> {tag_info['commit'][:7]} ({tag_info['message']})")
+                safe_print(f"{tag_info['name']} -> {tag_info['commit'][:7]} ({tag_info['message']})")
     elif args.name:
         # タグ作成
         try:
             ssm.tag(args.name, commit_hash=args.commit, message=args.message)
         except Exception as e:
-            print(f"Error: {e}", file=sys.stderr)
+            safe_print(f"Error: {e}", file=sys.stderr)
             sys.exit(1)
     else:
-        print("Error: Tag name required or use --list to list tags.", file=sys.stderr)
+        safe_print("Error: Tag name required or use --list to list tags.", file=sys.stderr)
         sys.exit(1)
 
 
@@ -814,13 +815,13 @@ def cmd_checkout_tag(args):
     ssm = get_ssm()
 
     if not ssm.is_initialized:
-        print("Error: SSM not initialized. Run 'ssm init' first.", file=sys.stderr)
+        safe_print("Error: SSM not initialized. Run 'ssm init' first.", file=sys.stderr)
         sys.exit(1)
 
     try:
         ssm.checkout_tag(args.tag)
     except Exception as e:
-        print(f"Error: {e}", file=sys.stderr)
+        safe_print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
 
 
@@ -829,26 +830,26 @@ def cmd_remote(args):
     ssm = get_ssm()
 
     if not ssm.is_initialized:
-        print("Error: SSM not initialized. Run 'ssm init' first.", file=sys.stderr)
+        safe_print("Error: SSM not initialized. Run 'ssm init' first.", file=sys.stderr)
         sys.exit(1)
 
     if args.add:
         if not args.name or not args.url:
-            print("Error: Remote name and URL required when adding a remote.", file=sys.stderr)
+            safe_print("Error: Remote name and URL required when adding a remote.", file=sys.stderr)
             sys.exit(1)
         try:
             ssm.remote_add(args.name, args.url)
         except Exception as e:
-            print(f"Error: {e}", file=sys.stderr)
+            safe_print(f"Error: {e}", file=sys.stderr)
             sys.exit(1)
     else:
         # リモート一覧表示
         remotes = ssm.remote_list()
         if not remotes:
-            print("No remotes")
+            safe_print("No remotes")
         else:
             for name, url in remotes.items():
-                print(f"{name}\t{url}")
+                safe_print(f"{name}\t{url}")
 
 
 def cmd_push(args):
@@ -856,13 +857,13 @@ def cmd_push(args):
     ssm = get_ssm()
 
     if not ssm.is_initialized:
-        print("Error: SSM not initialized. Run 'ssm init' first.", file=sys.stderr)
+        safe_print("Error: SSM not initialized. Run 'ssm init' first.", file=sys.stderr)
         sys.exit(1)
 
     try:
         ssm.push(remote_name=args.remote, branch_name=args.branch)
     except Exception as e:
-        print(f"Error: {e}", file=sys.stderr)
+        safe_print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
 
 
@@ -871,13 +872,13 @@ def cmd_pull(args):
     ssm = get_ssm()
 
     if not ssm.is_initialized:
-        print("Error: SSM not initialized. Run 'ssm init' first.", file=sys.stderr)
+        safe_print("Error: SSM not initialized. Run 'ssm init' first.", file=sys.stderr)
         sys.exit(1)
 
     try:
         ssm.pull(remote_name=args.remote, branch_name=args.branch)
     except Exception as e:
-        print(f"Error: {e}", file=sys.stderr)
+        safe_print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
 
 

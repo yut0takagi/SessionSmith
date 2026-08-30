@@ -347,6 +347,9 @@ SessionSmithは、Pythonセッション（変数・オブジェクト）をGit�
   - 実装: `.github/workflows/test.yml` のマトリクスに `windows-latest`（Python 3.12）を追加
   - 目的: OS依存の実装（`ProcessLock` / アトミック書き込み / パス検証）の動作確認
   - 全ステップのシェルを bash に統一（既定の pwsh では `rm -rf` などが動かないため）
+- ✅ **Windows 固有のバグを1件修正**
+  - `✓` や日本語メッセージの出力が `cp1252` コンソールで `UnicodeEncodeError` になり、
+    `ssm.commit()` などが落ちていた（`SessionSmith/_console.py` の `safe_print()` で解消）
 - ⚠️ **Windows でのカバー範囲は限定的**
   - 現在: Python 3.12 の1組み合わせのみ。macOS は未実行
   - 改善: 問題が見つかった箇所を中心に組み合わせを増やす
