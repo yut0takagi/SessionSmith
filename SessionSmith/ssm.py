@@ -555,6 +555,39 @@ class SSM:
 
             return lock
 
+    # ------------------------------------------------------------------
+    # 参照（ブランチ / タグ / リモート）の解決
+    #
+    # 参照は `.ssm/branches/<name>` のように1名前1ファイルで保持しているが、
+    # macOS（APFS の既定）と Windows のファイルシステムは大文字小文字を
+    # 区別しない。そのため `Path.exists()` に存在確認を任せると、
+    # `feature` しか無いのに `FEATURE` が「存在する」と判定されてしまう。
+    # 判定は必ずディレクトリを列挙して Python 側で行う。
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _list_ref_names(refs_dir: Path) -> list[str]:
+        """参照ディレクトリ内の名前を列挙する（存在しなければ空リスト）"""
+        if not refs_dir.exists():
+            return []
+        return [entry.name for entry in refs_dir.iterdir() if entry.is_file()]
+
+    def _ref_exists(self, refs_dir: Path, name: str) -> bool:
+        """参照が存在するかを、大文字小文字を区別して判定する"""
+        return name in self._list_ref_names(refs_dir)
+
+    def _find_case_conflicting_ref(self, refs_dir: Path, name: str) -> Optional[str]:
+        """大文字小文字だけが異なる既存の参照名を返す（無ければ None）
+
+        大文字小文字を区別しないファイルシステムでは同じファイルになるため、
+        作成を許すと既存の参照を上書きしてしまう。作成前に検出して拒否する。
+        """
+        lowered = name.lower()
+        for existing in self._list_ref_names(refs_dir):
+            if existing != name and existing.lower() == lowered:
+                return existing
+        return None
+
     def _repo_lock(self, timeout: Optional[float] = None) -> ProcessLock:
         """
         `.ssm` リポジトリ全体を対象としたプロセス間・スレッド間の排他ロックを返す
@@ -1163,8 +1196,9 @@ class SSM:
             # 親コミットを取得（現在のブランチから）
             current_branch = self.get_current_branch()
             if current_branch:
-                branch_file = self.ssm_path / self.BRANCHES_DIR / current_branch
-                if branch_file.exists():
+                branches_dir = self.ssm_path / self.BRANCHES_DIR
+                branch_file = branches_dir / current_branch
+                if self._ref_exists(branches_dir, current_branch):
                     parent = branch_file.read_text(encoding="utf-8").strip() or None
                 else:
                     head_file = self.ssm_path / self.HEAD_FILE
@@ -2251,9 +2285,16 @@ class SSM:
         if create:
             with self._repo_lock():
                 # 新しいブランチを作成
-                if branch_file.exists():
+                if self._ref_exists(branches_dir, branch_name):
                     error_msg = i18n.translate("error.branch_already_exists", branch_name=branch_name)
                     raise SSMConfigError(error_msg)
+
+                conflicting = self._find_case_conflicting_ref(branches_dir, branch_name)
+                if conflicting is not None:
+                    raise SSMConfigError(i18n.translate(
+                        "error.ref_case_conflict",
+                        kind="Branch", name=branch_name, existing=conflicting,
+                    ))
 
                 # 現在のHEADを取得
                 head_file = self.ssm_path / self.HEAD_FILE
@@ -2276,7 +2317,7 @@ class SSM:
             return branch_name
         else:
             # ブランチの存在確認
-            if not branch_file.exists():
+            if not self._ref_exists(branches_dir, branch_name):
                 raise SSMBranchNotFoundError(branch_name)
             return branch_name
 
@@ -2304,7 +2345,7 @@ class SSM:
             branches_dir = self.ssm_path / self.BRANCHES_DIR
             branch_file = branches_dir / branch_name
             ensure_within(branches_dir, branch_file)
-            if not branch_file.exists():
+            if not self._ref_exists(branches_dir, branch_name):
                 raise SSMBranchNotFoundError(branch_name)
 
             # ブランチのコミットを取得
@@ -2396,7 +2437,7 @@ class SSM:
             branches_dir = self.ssm_path / self.BRANCHES_DIR
             branch_file = branches_dir / branch_name
             ensure_within(branches_dir, branch_file)
-            if not branch_file.exists():
+            if not self._ref_exists(branches_dir, branch_name):
                 raise SSMBranchNotFoundError(branch_name)
 
             merge_commit = branch_file.read_text(encoding="utf-8").strip()
@@ -2644,9 +2685,16 @@ class SSM:
             tags_dir = self.ssm_path / self.TAGS_DIR
             tag_file = tags_dir / tag_name
             ensure_within(tags_dir, tag_file)
-            if tag_file.exists():
+            if self._ref_exists(tags_dir, tag_name):
                 error_msg = i18n.translate("error.tag_already_exists", tag_name=tag_name)
                 raise SSMConfigError(error_msg)
+
+            conflicting = self._find_case_conflicting_ref(tags_dir, tag_name)
+            if conflicting is not None:
+                raise SSMConfigError(i18n.translate(
+                    "error.ref_case_conflict",
+                    kind="Tag", name=tag_name, existing=conflicting,
+                ))
 
             tag_data = {
                 "commit": commit_hash,
@@ -2709,7 +2757,7 @@ class SSM:
             tags_dir = self.ssm_path / self.TAGS_DIR
             tag_file = tags_dir / tag_name
             ensure_within(tags_dir, tag_file)
-            if not tag_file.exists():
+            if not self._ref_exists(tags_dir, tag_name):
                 raise SSMTagNotFoundError(tag_name)
 
             tag_data = self._read_json(tag_file)
@@ -2753,9 +2801,16 @@ class SSM:
             remotes_dir = self.ssm_path / self.REMOTES_DIR
             remote_file = remotes_dir / name
             ensure_within(remotes_dir, remote_file)
-            if remote_file.exists():
+            if self._ref_exists(remotes_dir, name):
                 error_msg = _get_i18n().translate("error.remote_already_exists", remote_name=name)
                 raise SSMConfigError(error_msg)
+
+            conflicting = self._find_case_conflicting_ref(remotes_dir, name)
+            if conflicting is not None:
+                raise SSMConfigError(_get_i18n().translate(
+                    "error.ref_case_conflict",
+                    kind="Remote", name=name, existing=conflicting,
+                ))
 
             remote_data = {
                 "url": url,
@@ -2820,7 +2875,7 @@ class SSM:
             remotes_dir = self.ssm_path / self.REMOTES_DIR
             remote_file = remotes_dir / remote_name
             ensure_within(remotes_dir, remote_file)
-            if not remote_file.exists():
+            if not self._ref_exists(remotes_dir, remote_name):
                 raise SSMRemoteNotFoundError(remote_name)
 
             remote_data = self._read_json(remote_file)
@@ -2899,7 +2954,7 @@ class SSM:
             remotes_dir = self.ssm_path / self.REMOTES_DIR
             remote_file = remotes_dir / remote_name
             ensure_within(remotes_dir, remote_file)
-            if not remote_file.exists():
+            if not self._ref_exists(remotes_dir, remote_name):
                 raise SSMRemoteNotFoundError(remote_name)
 
             remote_data = self._read_json(remote_file)
@@ -2924,8 +2979,9 @@ class SSM:
                     raise SSMConfigError(error_msg)
 
                 # リモートのブランチからコミットを取得
-                remote_branch_file = remote_ssm_path / self.BRANCHES_DIR / branch_name
-                if not remote_branch_file.exists():
+                remote_branches_dir = remote_ssm_path / self.BRANCHES_DIR
+                remote_branch_file = remote_branches_dir / branch_name
+                if not self._ref_exists(remote_branches_dir, branch_name):
                     raise SSMBranchNotFoundError(branch_name)
 
                 remote_commit = remote_branch_file.read_text(encoding="utf-8").strip()
