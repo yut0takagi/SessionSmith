@@ -9,6 +9,7 @@ from SessionSmith.remote_backends import (
     FileSystemBackend,
     HTTPBackend,
     RemoteBackendError,
+    file_url_to_path,
     get_backend,
     is_url_remote,
 )
@@ -66,6 +67,39 @@ class TestGetBackend:
     def test_unsupported_scheme(self):
         with pytest.raises(RemoteBackendError):
             get_backend("ftp://example.com/repo")
+
+
+class TestFileUrlToPath:
+    """file:// URL の解析（特に Windows のドライブレター）"""
+
+    def test_posix_absolute_path(self):
+        assert str(file_url_to_path("file:///home/u/data")) == "/home/u/data"
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "file:///C:/Users/x/remote",  # RFC 準拠
+            "file://C:/Users/x/remote",  # netloc にドライブレター
+            r"file://C:\Users\x\remote",  # 区切りがバックスラッシュ
+        ],
+    )
+    def test_windows_drive_letter_is_not_dropped(self, url):
+        r"""どの書き方でもドライブレターが失われないこと
+
+        以前は `parsed.path` だけを見ていたため、`file://C:\...` が空パスになり
+        カレントディレクトリ配下の相対パスとして扱われていた。
+        """
+        result = str(file_url_to_path(url))
+        assert "C:" in result
+        assert result not in (".", "", "/")
+        assert result.rstrip("/\\").endswith("remote")
+
+    def test_unc_path(self):
+        result = str(file_url_to_path("file://server/share/dir"))
+        assert result.replace("\\", "/").startswith("//server/share")
+
+    def test_percent_encoded_path_is_unquoted(self):
+        assert str(file_url_to_path("file:///home/u/my%20data")) == "/home/u/my data"
 
 
 class TestIsUrlRemote:

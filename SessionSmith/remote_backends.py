@@ -24,12 +24,14 @@ URL スキームによってバックエンドが選択されます:
 """
 
 import logging
+import re
 import urllib.error
 import urllib.request
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Optional, cast
 from urllib.parse import urlparse
+from urllib.request import url2pathname
 
 from .exceptions import ValidationError
 from .validation import _has_control_chars
@@ -290,6 +292,39 @@ def validate_remote_url(url: str) -> str:
     )
 
 
+def file_url_to_path(url: str) -> Path:
+    """
+    ``file://`` URL をローカルパスに変換します。
+
+    Windows では次の3つの書き方がいずれも使われるため、すべてを受け付けます。
+
+    - ``file:///C:/data`` （RFC 準拠。urlparse では path="/C:/data"）
+    - ``file://C:/data`` （netloc にドライブレターが入る）
+    - ``file://C:\\data`` （区切りがバックスラッシュ。netloc に全体が入る）
+
+    加えて POSIX の ``file:///home/u/data`` と、UNC の ``file://server/share`` に対応します。
+
+    Args:
+        url: ``file://`` で始まる URL
+
+    Returns:
+        Path: 変換後のローカルパス
+    """
+    parsed = urlparse(url)
+    netloc, path = parsed.netloc, parsed.path
+
+    if not netloc:
+        # file:///... （正しい形式）。Windows では "/C:/data" -> "C:\\data" に変換される
+        return Path(url2pathname(path))
+
+    # netloc がドライブレターで始まる場合は、ホスト名ではなくパスの一部として扱う
+    if re.match(r"^[A-Za-z][:|]", netloc):
+        return Path(url2pathname(netloc + path))
+
+    # それ以外は UNC ホスト（file://server/share）
+    return Path(f"//{netloc}{url2pathname(path)}")
+
+
 def get_backend(url: str, *, local_ssm_dirname: str = ".ssm") -> RemoteBackend:
     """
     URL からリモートバックエンドを生成します。
@@ -314,7 +349,7 @@ def get_backend(url: str, *, local_ssm_dirname: str = ".ssm") -> RemoteBackend:
     if scheme in ("http", "https"):
         return HTTPBackend(base_url=url)
     if scheme == "file":
-        return FileSystemBackend(Path(parsed.path) / local_ssm_dirname)
+        return FileSystemBackend(file_url_to_path(url) / local_ssm_dirname)
     # スキームなし = ローカルパス
     if scheme == "" or len(scheme) == 1:  # Windows ドライブレター(C:) も考慮
         return FileSystemBackend(Path(url) / local_ssm_dirname)

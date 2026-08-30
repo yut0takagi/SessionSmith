@@ -30,6 +30,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - 端末が表現できない文字を置換して出力を継続する `SessionSmith/_console.py` の
     `safe_print()` を追加し、パッケージ内の `print()` 229箇所を置き換え
   - 回帰テスト: `tests/test_console.py`
+- **Windows で `file://` リモートが意図しない場所を指す問題を修正**
+  - `file://C:\\data` は `urlparse` で `path` が空になるため、カレントディレクトリ配下の
+    相対パス `.ssm` として扱われていた。`file:///C:/data` や `file://C:/data` も
+    ドライブレターが失われていた
+  - `file_url_to_path()` を追加し、`url2pathname()` 経由で3つの書き方すべてと
+    UNC パス（`file://server/share`）に対応
+  - 回帰テスト: `tests/test_remote_backends.py::TestFileUrlToPath`
 - `SSM._signal_handler` が、元のシグナルハンドラが `SIG_IGN`（整数の 1）だった場合に
   `1(signum, frame)` を呼び出して `TypeError` になる問題を修正
   （真偽値ではなく `callable()` で確認するように変更。`SIG_DFL` は 0 のため従来も呼ばれなかった）
