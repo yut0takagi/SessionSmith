@@ -70,8 +70,12 @@ def compare_sessions(
         temp_globals2: dict[str, Any] = {}
 
         try:
-            load_session(file_path1, globals_dict=temp_globals1)
-            load_session(file_path2, globals_dict=temp_globals2)
+            # use_ssm=False が必須。既定の use_ssm=True では、指定ファイルを
+            # SSM にインポートしてコミットを作り、そのコミットから復元する
+            # 経路になるため、(1) temp_globals に何も入らず変更を検出できない、
+            # (2) 比較しただけで .ssm にコミットが増える、という問題が起きる。
+            load_session(file_path1, globals_dict=temp_globals1, use_ssm=False)
+            load_session(file_path2, globals_dict=temp_globals2, use_ssm=False)
         except Exception as e:
             raise OSError(f"Failed to load sessions for comparison: {str(e)}") from e
 

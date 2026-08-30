@@ -34,9 +34,11 @@ def _load_session_file(file_path: Union[str, Path], format: Optional[str] = None
         raise ValueError(f"'{file_path}' is not a file.")
 
     from .formats import detect_format, load_hdf5, load_json, load_msgpack, load_pickle
+    from .utils import detect_compression
 
     session: dict[str, Any] = {}
-    compression: Optional[str] = None
+    # マジックナンバーから圧縮形式を判定する（gzip / bz2 / 非圧縮）
+    compression: Optional[str] = detect_compression(file_path)
 
     try:
         detected_format = detect_format(file_path, format)
