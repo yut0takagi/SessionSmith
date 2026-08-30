@@ -1,8 +1,8 @@
 class Sessionsmith < Formula
   desc "Git-style session management for Python. Save, restore, and track your variables with ease."
   homepage "https://github.com/yut0takagi/SessionSmith"
-  url "https://github.com/yut0takagi/SessionSmith/archive/refs/tags/v2.2.0.tar.gz"
-  sha256 "5f9f2bbf7c5b2b909f021d76623ce1c1b305bd81fd4b5200ef337b79855db373"
+  url "https://github.com/yut0takagi/SessionSmith/archive/refs/tags/v2.3.0.tar.gz"
+  sha256 "c064196f81c9d5fc25a8c0821d815481de097804b83d584f3b4ea739e19d28ef"
   license "MIT"
   head "https://github.com/yut0takagi/SessionSmith.git", branch: "main"
 
