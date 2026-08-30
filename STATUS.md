@@ -277,9 +277,11 @@ SessionSmithは、Pythonセッション（変数・オブジェクト）をGit�
   - プロセス間ロック（`test_locking.py`）、パス/参照名の検証（`test_security.py`）
   - マージコンフリクト検出・`clean=True` チェックアウト（`test_merge_checkout_features.py`）
   - 既知バグの回帰（`test_ssm_bugfixes.py`）、branch/merge/tag/remote のE2E（`test_ssm_e2e.py`）
-- ⚠️ **カバレッジのしきい値が低い**
-  - 現在: `--cov-fail-under=30`（実測 約35%）。大幅な低下の検知が目的で、十分な水準ではない
-  - 改善: 段階的にしきい値を引き上げる
+- ⚠️ **カバレッジのしきい値は実測より低い**
+  - 現在: `--cov-fail-under=40`（CI実測 約43.6%）。大幅な低下の検知が目的で、十分な水準ではない
+  - 改善: カバレッジ自体を上げつつ、しきい値を段階的に引き上げる
+  - 特に低いモジュール: `visualizer_arrays`(4%) / `utils`(7%) / `compare`(7%) /
+    `tracer`(9%) / `info`(9%) / `manager`(10%) / `cli`(17%)
 
 #### エッジケース
 - ✅ **基本的なエッジケースはテスト済み**
@@ -341,9 +343,16 @@ SessionSmithは、Pythonセッション（変数・オブジェクト）をGit�
   - 改善: すべてのサポートバージョンでのテスト
 
 #### プラットフォーム
-- ⚠️ **Windowsでの動作確認が不十分**
-  - 現在: Unix系OS中心の実装
-  - 改善: Windowsでの包括的なテスト
+- ✅ **CI に Windows を追加**
+  - 実装: `.github/workflows/test.yml` のマトリクスに `windows-latest`（Python 3.12）を追加
+  - 目的: OS依存の実装（`ProcessLock` / アトミック書き込み / パス検証）の動作確認
+  - 全ステップのシェルを bash に統一（既定の pwsh では `rm -rf` などが動かないため）
+- ✅ **Windows 固有のバグを1件修正**
+  - `✓` や日本語メッセージの出力が `cp1252` コンソールで `UnicodeEncodeError` になり、
+    `ssm.commit()` などが落ちていた（`SessionSmith/_console.py` の `safe_print()` で解消）
+- ⚠️ **Windows でのカバー範囲は限定的**
+  - 現在: Python 3.12 の1組み合わせのみ。macOS は未実行
+  - 改善: 問題が見つかった箇所を中心に組み合わせを増やす
 
 ### 開発体験
 
@@ -369,9 +378,14 @@ SessionSmithは、Pythonセッション（変数・オブジェクト）をGit�
   - 実装: `.github/workflows/test.yml` で `mypy SessionSmith/` を必須チェック化
   - グローバルな `ignore_missing_imports` をやめ、実際に import しているサードパーティ
     モジュールのみを `[[tool.mypy.overrides]]` で列挙
-- ⚠️ **一部モジュールを一時除外中**
-  - 現在: `ssm` / `cli` / `formats` / `manager` / `remote_backends` を理由付きで `ignore_errors`
-  - 改善: 除外対象を段階的に縮小する（新規に広げない）
+- ✅ **`ignore_errors` による除外を解消（`SessionSmith/` 全モジュールが対象）**
+  - `ssm` / `cli` / `formats` / `manager` / `remote_backends` の一時除外を削除し、
+    既存の型エラー30件をすべて解消
+  - `[[tool.mypy.overrides]]` に残るのは、型スタブ未提供のサードパーティ依存の
+    `ignore_missing_imports` のみ
+  - 公開シグネチャ用の型エイリアス `SessionFormat` を `formats.py` に追加
+- ⚠️ **`disallow_untyped_defs` は無効のまま**
+  - 改善: 型注釈のない関数を段階的に潰して有効化する
 
 ---
 
@@ -386,18 +400,18 @@ SessionSmithは、Pythonセッション（変数・オブジェクト）をGit�
 - APIリファレンスの更新、構造化ロギング、暗号化・署名、クラウドリモート
 
 ### 🔴 高優先度
-1. **mypy 除外モジュールの縮小** - 保守性のため
-   - `ssm` / `cli` / `formats` / `manager` / `remote_backends` の `ignore_errors` を段階的に解除
-2. **カバレッジしきい値の引き上げ** - 品質保証のため
-   - 現在 `--cov-fail-under=30`（実測 約35%）。コアモジュールから順に引き上げる
-3. **Windows での動作確認** - 互換性のため
-   - `ProcessLock` / アトミック書き込み / パス検証は特に OS 依存が大きい
-   - CI マトリクスへの `windows-latest` 追加を検討
+1. **テストカバレッジ自体の引き上げ** - 品質保証のため
+   - CI実測 約43.6%。`utils` / `compare` / `info` / `tracer` / `manager` / `cli` が特に低い
+   - しきい値（現在 `--cov-fail-under=40`）を追随して上げていく
+2. **Windows でのカバー範囲拡大** - 互換性のため
+   - 現在は Python 3.12 の1組み合わせのみ。macOS は未実行
+3. **`disallow_untyped_defs` の有効化** - 保守性のため
+   - `ignore_errors` の解消は完了したので、次は型注釈の網羅性を上げる
 
 ### 🟡 中優先度
 4. **CLI・拡張機能を含む統合テスト** - 実用性のため
 5. **型ヒントの完全性** - 保守性のため
-   - すべての関数への型ヒント追加
+   - すべての関数への型ヒント追加（`disallow_untyped_defs = true` を目標に）
 6. **統一されたデバッグモード** - 開発体験のため
 7. **チェックポイント間隔の適応的調整** - 実用性のため
    - ベンチマーク結果（概ね25〜30ms/MB）に基づく既定値の見直し

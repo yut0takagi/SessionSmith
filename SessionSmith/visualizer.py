@@ -7,6 +7,7 @@ import warnings
 from pathlib import Path
 from typing import Any, Optional, Union
 
+from ._console import safe_print
 from .visualizer_arrays import visualize_arrays as _visualize_arrays
 from .visualizer_generic import visualize_generic as _visualize_generic
 
@@ -77,7 +78,7 @@ def visualize_algorithm_trace(
 
     if not trace_data:
         if debug:
-            print("トレースデータが空です")
+            safe_print("トレースデータが空です")
         return
 
     if not isinstance(trace_data, list):
@@ -86,14 +87,14 @@ def visualize_algorithm_trace(
     # デバッグ: 最初のステップのデータ構造を確認
     if debug and trace_data:
         first_step = trace_data[0]
-        print(f"デバッグ: 最初のステップの変数: {list(first_step.get('variables', {}).keys())}")
+        safe_print(f"デバッグ: 最初のステップの変数: {list(first_step.get('variables', {}).keys())}")
         if target_variables:
             for var_name in target_variables:
                 var_data = first_step.get("variables", {}).get(var_name)
                 if var_data is not None:
-                    print(f"デバッグ: 変数 '{var_name}' の型: {type(var_data).__name__}, 値: {str(var_data)[:100]}")
+                    safe_print(f"デバッグ: 変数 '{var_name}' の型: {type(var_data).__name__}, 値: {str(var_data)[:100]}")
                 else:
-                    print(f"デバッグ: 変数 '{var_name}' が見つかりません")
+                    safe_print(f"デバッグ: 変数 '{var_name}' が見つかりません")
 
     # 可視化する変数を決定
     if target_variables is None:
@@ -104,7 +105,7 @@ def visualize_algorithm_trace(
                 all_vars.update(step.get("variables", {}).keys())
         target_variables = sorted(all_vars)
         if debug:
-            print(f"デバッグ: 自動検出された変数: {target_variables}")
+            safe_print(f"デバッグ: 自動検出された変数: {target_variables}")
 
     # 配列やリストの可視化
     array_vars: list[str] = []
@@ -121,7 +122,7 @@ def visualize_algorithm_trace(
                     array_vars.append(var_name)
                     found_array = True
                     if debug:
-                        print(f"デバッグ: 変数 '{var_name}' をリストとして検出（長さ: {len(var_data)}）")
+                        safe_print(f"デバッグ: 変数 '{var_name}' をリストとして検出（長さ: {len(var_data)}）")
                     break
                 # 辞書形式の場合（シリアライズされたデータ）
                 elif isinstance(var_data, dict):
@@ -134,7 +135,7 @@ def visualize_algorithm_trace(
                             array_vars.append(var_name)
                             found_array = True
                             if debug:
-                                print(f"デバッグ: 変数 '{var_name}' をndarrayとして検出")
+                                safe_print(f"デバッグ: 変数 '{var_name}' をndarrayとして検出")
                             break
                     elif var_type in ["list", "tuple"]:
                         # dataまたはsampleが存在するか確認
@@ -144,7 +145,7 @@ def visualize_algorithm_trace(
                             array_vars.append(var_name)
                             found_array = True
                             if debug:
-                                print(f"デバッグ: 変数 '{var_name}' を{var_type}として検出")
+                                safe_print(f"デバッグ: 変数 '{var_name}' を{var_type}として検出")
                             break
         if not found_array and debug:
             # デバッグ: 変数が見つからない場合、詳細を表示
@@ -153,10 +154,10 @@ def visualize_algorithm_trace(
                     continue
                 var_data = step.get("variables", {}).get(var_name)
                 if var_data is not None:
-                    print(f"デバッグ: 変数 '{var_name}' のデータ: 型={type(var_data).__name__}, 値={str(var_data)[:200]}")
+                    safe_print(f"デバッグ: 変数 '{var_name}' のデータ: 型={type(var_data).__name__}, 値={str(var_data)[:200]}")
                     break
             else:
-                print(f"警告: 変数 '{var_name}' はどのステップでも見つかりませんでした")
+                safe_print(f"警告: 変数 '{var_name}' はどのステップでも見つかりませんでした")
 
     if array_vars:
         _visualize_arrays(trace_data, array_vars, output_file, animation, interval, show, debug)
@@ -197,7 +198,7 @@ def print_trace_summary(
             raise ValueError(f"Invalid JSON in trace file '{trace_file}': {str(e)}") from e
 
     if not trace_data:
-        print("トレースデータが空です")
+        safe_print("トレースデータが空です")
         return
 
     if not isinstance(trace_data, list):
@@ -217,14 +218,14 @@ def print_trace_summary(
         if func_name:
             functions.add(func_name)
 
-    print("=" * 60)
-    print("トレースサマリー")
-    print("=" * 60)
-    print(f"総ステップ数: {len(trace_data)}")
-    print(f"追跡された変数: {len(all_vars)}")
-    print(f"  変数リスト: {', '.join(sorted(all_vars))}")
+    safe_print("=" * 60)
+    safe_print("トレースサマリー")
+    safe_print("=" * 60)
+    safe_print(f"総ステップ数: {len(trace_data)}")
+    safe_print(f"追跡された変数: {len(all_vars)}")
+    safe_print(f"  変数リスト: {', '.join(sorted(all_vars))}")
     if line_numbers:
-        print(f"行番号範囲: {min(line_numbers)} - {max(line_numbers)}")
+        safe_print(f"行番号範囲: {min(line_numbers)} - {max(line_numbers)}")
     if functions:
-        print(f"実行された関数: {', '.join(sorted(functions))}")
-    print("=" * 60)
+        safe_print(f"実行された関数: {', '.join(sorted(functions))}")
+    safe_print("=" * 60)

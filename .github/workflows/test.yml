@@ -8,11 +8,25 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     strategy:
+      # 1つの組み合わせが落ちても、他の組み合わせの結果を最後まで見たい
+      fail-fast: false
       matrix:
+        os: [ubuntu-latest]
         python-version: ['3.9', '3.10', '3.11', '3.12']
+        # Windows は OS 依存の実装（ProcessLock / アトミック書き込み / パス検証）の
+        # 動作確認が目的なので、代表として最新のサポートバージョンのみ実行する
+        include:
+          - os: windows-latest
+            python-version: '3.12'
+
+    # 全ステップを bash に統一する（Windows の既定シェルは pwsh のため、
+    # rm -rf や dist/*.whl のグロブがそのままでは動かない）
+    defaults:
+      run:
+        shell: bash
 
     steps:
       - uses: actions/checkout@v4
@@ -26,7 +40,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install build pytest pytest-cov
-              
+
       - name: Clean build artifacts
         run: |
           rm -rf dist/ build/ *.egg-info/
@@ -46,13 +60,15 @@ jobs:
       - name: Run tests
         run: |
           pip install -e ".[dev]"
-          pytest tests/ -v --tb=short --timeout=300 -x --cov=SessionSmith --cov-report=term-missing --cov-report=xml --cov-fail-under=30
+          # --cov-fail-under: 大幅なカバレッジ低下の検知が目的（実測は約43.6%）。
+          # 実測値を下回るしきい値を段階的に引き上げていく。
+          pytest tests/ -v --tb=short --timeout=300 -x --cov=SessionSmith --cov-report=term-missing --cov-report=xml --cov-fail-under=40
 
       - name: Upload coverage report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: coverage-xml-${{ matrix.python-version }}
+          name: coverage-xml-${{ matrix.os }}-${{ matrix.python-version }}
           path: coverage.xml
           retention-days: 14
 
@@ -80,8 +96,8 @@ jobs:
 
       - name: Run mypy
         run: |
-          # 公開API + コアモジュール群を対象にした必須ゲート（issue #27）。
-          # 型スタブなしの依存や既存の型エラーが多いモジュールは
-          # pyproject.toml の [[tool.mypy.overrides]] で明示的に除外/緩和している。
+          # SessionSmith/ 配下の全モジュールを対象にした必須ゲート（issue #27）。
+          # ignore_errors による除外は解消済みで、pyproject.toml の overrides に残るのは
+          # 型スタブを提供していないサードパーティ依存の ignore_missing_imports のみ。
           mypy SessionSmith/
 

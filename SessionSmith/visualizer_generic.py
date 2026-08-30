@@ -6,6 +6,8 @@ import warnings
 from pathlib import Path
 from typing import Any, Optional, Union
 
+from ._console import safe_print
+
 try:
     import matplotlib.pyplot as plt
     MATPLOTLIB_AVAILABLE = True
@@ -67,7 +69,7 @@ def visualize_generic(
         output_file.parent.mkdir(parents=True, exist_ok=True)
         try:
             plt.savefig(str(output_file), dpi=150, bbox_inches='tight')
-            print(f"Plot saved to {output_file}")
+            safe_print(f"Plot saved to {output_file}")
         except Exception as e:
             plt.close(fig)
             raise OSError(f"Failed to save plot: {str(e)}") from e

@@ -5,6 +5,42 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- mypy の CI ゲートを `SessionSmith/` 全モジュールに拡大 (#27 の残作業)
+  - `ssm` / `cli` / `formats` / `manager` / `remote_backends` の `ignore_errors` を削除し、
+    既存の型エラー30件をすべて解消
+  - `pyproject.toml` の overrides に残るのは、型スタブを提供していないサードパーティ依存の
+    `ignore_missing_imports` のみ
+  - 公開シグネチャ用に `SessionFormat`（`Literal["pickle", "json", "msgpack", "hdf5"]`）を
+    `SessionSmith/formats.py` に追加
+- CI のカバレッジしきい値を 30% → 40% に引き上げ（実測 約43.6%）
+- CI のテストマトリクスに `windows-latest`（Python 3.12）を追加
+  - OS 依存の実装（`ProcessLock` / アトミック書き込み / パス検証）の動作確認が目的
+  - 全ステップのシェルを bash に統一（Windows の既定 pwsh では `rm -rf` や
+    `dist/*.whl` のグロブが動かないため）
+
+### Fixed
+
+- **Windows のコンソールで出力時にクラッシュする問題を修正**
+  - `ssm.commit()` などが出力する `✓` や日本語メッセージが、Windows の既定コンソール
+    （`cp1252` など）で `UnicodeEncodeError` になり処理全体が落ちていた
+  - 端末が表現できない文字を置換して出力を継続する `SessionSmith/_console.py` の
+    `safe_print()` を追加し、パッケージ内の `print()` 229箇所を置き換え
+  - 回帰テスト: `tests/test_console.py`
+- **Windows で `file://` リモートが意図しない場所を指す問題を修正**
+  - `file://C:\\data` は `urlparse` で `path` が空になるため、カレントディレクトリ配下の
+    相対パス `.ssm` として扱われていた。`file:///C:/data` や `file://C:/data` も
+    ドライブレターが失われていた
+  - `file_url_to_path()` を追加し、`url2pathname()` 経由で3つの書き方すべてと
+    UNC パス（`file://server/share`）に対応
+  - 回帰テスト: `tests/test_remote_backends.py::TestFileUrlToPath`
+- `SSM._signal_handler` が、元のシグナルハンドラが `SIG_IGN`（整数の 1）だった場合に
+  `1(signum, frame)` を呼び出して `TypeError` になる問題を修正
+  （真偽値ではなく `callable()` で確認するように変更。`SIG_DFL` は 0 のため従来も呼ばれなかった）
+
 ## [2.2.0] - 2026-08-30
 
 ### Added

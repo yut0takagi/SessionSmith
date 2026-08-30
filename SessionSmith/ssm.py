@@ -33,9 +33,10 @@ from collections import OrderedDict
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Optional, Union
+from typing import TYPE_CHECKING, Any, Callable, Optional, Union, cast
 
 from . import i18n
+from ._console import safe_print
 from .exceptions import (
     SSMBranchNotFoundError,
     SSMCommitNotFoundError,
@@ -49,17 +50,27 @@ from .exceptions import (
     ValidationError,
     _get_i18n,
 )
+from .formats import SessionFormat
 from .jupyter_utils import is_jupyter_environment, is_jupyter_internal_var
 from .locking import ProcessLock
 from .validation import ensure_within, validate_path_arg, validate_ref_name
 
-# リソース管理（オプショナル）
-try:
+if TYPE_CHECKING:
+    from types import FrameType
+
     from .resource_manager import ResourceManager
+
+# リソース管理（オプショナル）
+# 型注釈用の名前（TYPE_CHECKING 側）と実体を分けることで、
+# ImportError 時に「型に None を代入する」不整合を避ける。
+try:
+    from .resource_manager import ResourceManager as _ResourceManagerImpl
     HAS_RESOURCE_MANAGER = True
 except ImportError:
     HAS_RESOURCE_MANAGER = False
-    ResourceManager = None
+
+# signal.signal() が返す「元のハンドラ」の型
+_SignalHandler = Union[Callable[[int, Optional["FrameType"]], Any], int, None]
 
 # ロガー設定
 logger = logging.getLogger("SessionSmith.ssm")
@@ -109,8 +120,8 @@ class CheckpointContext:
         self._metrics: dict[str, list[float]] = {}
 
         # シグナルハンドラー
-        self._original_sigint = None
-        self._original_sigterm = None
+        self._original_sigint: _SignalHandler = None
+        self._original_sigterm: _SignalHandler = None
 
     @property
     def checkpoint_dir(self) -> Path:
@@ -153,7 +164,7 @@ class CheckpointContext:
         )
         self._thread.start()
 
-        print(f"✓ Checkpoint started (interval: {self.interval}s)")
+        safe_print(f"✓ Checkpoint started (interval: {self.interval}s)")
         logger.info(f"Checkpoint started (interval: {self.interval}s)")
 
     def stop(self) -> None:
@@ -189,7 +200,7 @@ class CheckpointContext:
         except Exception:
             pass
 
-        print(f"✓ Checkpoint stopped (elapsed: {self.elapsed_str})")
+        safe_print(f"✓ Checkpoint stopped (elapsed: {self.elapsed_str})")
         logger.info("Checkpoint stopped")
 
     def step(self, force: bool = False, **metrics) -> bool:
@@ -382,9 +393,10 @@ class CheckpointContext:
             logger.error(f"Failed to save checkpoint in signal handler: {e}")
 
         # 元のハンドラーを呼び出し
-        if signum == signal.SIGINT and self._original_sigint:
+        # 元のハンドラは int（SIG_DFL / SIG_IGN）の場合があるため callable を確認する
+        if signum == signal.SIGINT and callable(self._original_sigint):
             self._original_sigint(signum, frame)
-        elif signum == signal.SIGTERM and self._original_sigterm:
+        elif signum == signal.SIGTERM and callable(self._original_sigterm):
             self._original_sigterm(signum, frame)
 
     def _on_exit(self) -> None:
@@ -495,7 +507,7 @@ class SSM:
         self._resource_manager: Optional[ResourceManager] = None
         if HAS_RESOURCE_MANAGER:
             try:
-                self._resource_manager = ResourceManager(self.ssm_path)
+                self._resource_manager = _ResourceManagerImpl(self.ssm_path)
             except Exception as e:
                 logger.warning(f"Failed to initialize ResourceManager: {e}")
 
@@ -715,7 +727,7 @@ class SSM:
         if self.ssm_path.exists():
             if not force:
                 message = i18n.translate("info.ssm_already_initialized", base_path=self.base_path)
-                print(f"✓ {message}")
+                safe_print(f"✓ {message}")
                 return
             shutil.rmtree(self.ssm_path)
 
@@ -742,7 +754,7 @@ class SSM:
         self._write_text_atomic(self.ssm_path / self.HEAD_FILE, "")
 
         message = i18n.translate("info.ssm_initialized", base_path=self.base_path)
-        print(f"✓ {message}")
+        safe_print(f"✓ {message}")
 
     def _ensure_initialized(self) -> None:
         """初期化されていることを確認
@@ -1014,7 +1026,7 @@ class SSM:
             )
 
         if skipped_vars and verbose:
-            print(f"⚠ Skipped {len(skipped_vars)} variables (use ssm.log_skipped() for details)")
+            safe_print(f"⚠ Skipped {len(skipped_vars)} variables (use ssm.log_skipped() for details)")
 
         # 変数名の衝突警告を表示
         if conflict_warnings and verbose:
@@ -1033,7 +1045,7 @@ class SSM:
                     if len(common_vars) > 5:
                         warn_msg += f" ... (and {len(common_vars) - 5} more)"
                     warnings.warn(warn_msg, UserWarning, stacklevel=2)
-                    print(f"⚠ {warn_msg}")
+                    safe_print(f"⚠ {warn_msg}")
 
         # 統計情報を更新
         self._stats["total_saved_bytes"] = total_size
@@ -1043,7 +1055,7 @@ class SSM:
     def _serialize_with_retry(
         self,
         value: Any,
-        max_attempts: int = None,
+        max_attempts: Optional[int] = None,
     ) -> bytes:
         """
         リトライ付きシリアライズ
@@ -1111,7 +1123,7 @@ class SSM:
             if not variables:
                 logger.warning("No variables to commit")
                 warn_msg = i18n.translate("msg.no_variables")
-                print(f"⚠ {warn_msg}")
+                safe_print(f"⚠ {warn_msg}")
                 return ""
 
             # リソースチェック（ディスク容量、メモリ）
@@ -1213,7 +1225,7 @@ class SSM:
         short_hash = commit_hash[:7]
         commit_msg = message or i18n.translate("msg.no_changes")
         info_msg = i18n.translate("info.commit_created", short_hash=short_hash, message=commit_msg, var_count=var_count)
-        print(f"✓ {info_msg}")
+        safe_print(f"✓ {info_msg}")
 
         return commit_hash
 
@@ -1230,7 +1242,8 @@ class SSM:
             raise FileNotFoundError(f"Snapshot not found: {name}")
 
         with gzip.open(snapshot_path, 'rb') as f:
-            return pickle.load(f)
+            # pickle.load() は Any を返すため、保存時の型を cast で明示する
+            return cast(dict[str, Any], pickle.load(f))
 
     def log(self, limit: int = 10, oneline: bool = False) -> list[dict[str, Any]]:
         """
@@ -1249,7 +1262,7 @@ class SSM:
         current = head_file.read_text().strip()
 
         if not current:
-            print("No commits yet")
+            safe_print("No commits yet")
             return []
 
         commits = []
@@ -1266,21 +1279,21 @@ class SSM:
 
             if oneline:
                 var_count = len(commit_data.get("variables", {}))
-                print(f"{current[:7]} {commit_data['message']} ({var_count} vars)")
+                safe_print(f"{current[:7]} {commit_data['message']} ({var_count} vars)")
             else:
-                print(f"\ncommit {current}")
-                print(f"Author: {commit_data['author']}")
-                print(f"Date:   {commit_data['timestamp']}")
+                safe_print(f"\ncommit {current}")
+                safe_print(f"Author: {commit_data['author']}")
+                safe_print(f"Date:   {commit_data['timestamp']}")
 
                 # 呼び出し元の情報を表示（複数ファイル使用時の追跡）
                 caller_info = commit_data.get("caller", {})
                 if caller_info and caller_info.get("filename") != "<unknown>":
                     filename = caller_info.get("filename", "<unknown>")
-                    print(f"File:   {filename}")
+                    safe_print(f"File:   {filename}")
 
-                print(f"\n    {commit_data['message']}")
+                safe_print(f"\n    {commit_data['message']}")
                 var_count = len(commit_data.get("variables", {}))
-                print(f"    ({var_count} variables)")
+                safe_print(f"    ({var_count} variables)")
 
             current = commit_data.get("parent")
             count += 1
@@ -1395,12 +1408,12 @@ class SSM:
 
         logger.info(f"Restored {restored} variables from {full_hash[:7]}")
         info_msg = i18n.translate("info.variables_restored", restored=restored, short_hash=full_hash[:7])
-        print(f"✓ {info_msg}")
+        safe_print(f"✓ {info_msg}")
         if failed > 0:
             warn_msg = i18n.translate("warn.partial_load", loaded=restored, total=restored + failed)
-            print(f"  ⚠️ {warn_msg}")
+            safe_print(f"  ⚠️ {warn_msg}")
         if clean and removed > 0:
-            print(f"  ✓ Removed {removed} stale variable(s) not present in target commit")
+            safe_print(f"  ✓ Removed {removed} stale variable(s) not present in target commit")
 
     def _is_full_hash_candidate(self, value: str) -> bool:
         """`value` が完全な長さの16進数ハッシュに見えるかを判定する"""
@@ -1454,16 +1467,16 @@ class SSM:
         globals_dict = self._get_globals_dict(depth=3)
         variables = self._get_saveable_vars(globals_dict)
 
-        print(f"On commit: {current[:7] if current else '(none)'}")
-        print(f"Variables: {len(variables)}")
+        safe_print(f"On commit: {current[:7] if current else '(none)'}")
+        safe_print(f"Variables: {len(variables)}")
 
         if self._continuous_enabled:
-            print("Continuous: enabled")
+            safe_print("Continuous: enabled")
 
-        print("\nTracked variables:")
+        safe_print("\nTracked variables:")
         for name, value in sorted(variables.items()):
             type_name = type(value).__name__
-            print(f"  {name}: {type_name}")
+            safe_print(f"  {name}: {type_name}")
 
         return {
             "head": current,
@@ -1481,7 +1494,7 @@ class SSM:
         current = head_file.read_text().strip()
 
         if not current:
-            print("No commits to compare")
+            safe_print("No commits to compare")
             return
 
         # 現在の変数と最新コミットを比較
@@ -1496,17 +1509,17 @@ class SSM:
         removed = committed_vars - current_vars
 
         if added:
-            print("New variables:")
+            safe_print("New variables:")
             for name in sorted(added):
-                print(f"  + {name}")
+                safe_print(f"  + {name}")
 
         if removed:
-            print("Removed variables:")
+            safe_print("Removed variables:")
             for name in sorted(removed):
-                print(f"  - {name}")
+                safe_print(f"  - {name}")
 
         if not added and not removed:
-            print("No changes")
+            safe_print("No changes")
 
     def continuous(self, enable: bool = True, verbose: bool = False) -> None:
         """
@@ -1537,7 +1550,7 @@ class SSM:
                     pass
 
                 ip.events.register('post_run_cell', self._continuous_callback)
-                print("✓ Continuous mode enabled")
+                safe_print("✓ Continuous mode enabled")
             except Exception as e:
                 warnings.warn(f"Failed to enable continuous mode: {e}", stacklevel=2)
                 self._continuous_enabled = False
@@ -1548,7 +1561,7 @@ class SSM:
                 ip.events.unregister('post_run_cell', self._continuous_callback)
             except Exception:
                 pass
-            print("✓ Continuous mode disabled")
+            safe_print("✓ Continuous mode disabled")
 
     def _continuous_callback(self, result=None) -> None:
         """セル実行後のコールバック"""
@@ -1566,7 +1579,7 @@ class SSM:
                     pickle.dump(variables, f)
 
                 if self._continuous_verbose:
-                    print(f"  ✓ Auto-saved {len(variables)} variables")
+                    safe_print(f"  ✓ Auto-saved {len(variables)} variables")
         except Exception as e:
             if self._continuous_verbose:
                 warnings.warn(f"Auto-save failed: {e}", stacklevel=2)
@@ -1579,7 +1592,7 @@ class SSM:
 
         autosave_path = self.ssm_path / self.CONTINUOUS_DIR / "autosave"
         if not autosave_path.exists():
-            print("No autosave found")
+            safe_print("No autosave found")
             return
 
         try:
@@ -1591,7 +1604,7 @@ class SSM:
                 globals_dict[name] = value
 
             info_msg = i18n.translate("info.checkpoint_restored", restored_count=len(variables))
-            print(f"✓ {info_msg}")
+            safe_print(f"✓ {info_msg}")
         except Exception as e:
             raise RuntimeError(f"Failed to recover: {e}") from e
 
@@ -1709,9 +1722,9 @@ class SSM:
         }
 
         info_msg = i18n.translate("info.checkpoint_restored", restored_count=restored_count)
-        print(f"✓ {info_msg}")
-        print(f"  Timestamp: {data.get('timestamp')}")
-        print(f"  Message: {data.get('message')}")
+        safe_print(f"✓ {info_msg}")
+        safe_print(f"  Timestamp: {data.get('timestamp')}")
+        safe_print(f"  Message: {data.get('message')}")
 
         return meta
 
@@ -1725,7 +1738,7 @@ class SSM:
         self._ensure_initialized()
 
         checkpoint_dir = self.ssm_path / self.CHECKPOINTS_DIR
-        checkpoints = []
+        checkpoints: list[dict[str, Any]] = []
 
         if not checkpoint_dir.exists():
             return checkpoints
@@ -1784,7 +1797,7 @@ class SSM:
                 logger.warning(f"Failed to delete checkpoint: {e}")
 
         if deleted > 0:
-            print(f"✓ Deleted {deleted} checkpoint(s)")
+            safe_print(f"✓ Deleted {deleted} checkpoint(s)")
 
         return deleted
 
@@ -1858,7 +1871,8 @@ class SSM:
             file_path=output_path,
             globals_dict=variables,
             compress=compress,
-            format=format,
+            # 未対応の値は core 側の detect_format() が ValueError を送出する
+            format=cast(Optional[SessionFormat], format),
             use_ssm=False,  # 循環参照を避けるため
         )
 
@@ -1872,9 +1886,9 @@ class SSM:
 
         logger.info(f"Exported {len(variables)} variables to {output_path}")
         info_msg = i18n.translate("info.session_saved", file_path=output_path, size=0, format=format)
-        print(f"✓ {info_msg}")
+        safe_print(f"✓ {info_msg}")
         encrypted_note = " (encrypted)" if password else ""
-        print(f"  Format: {format}, Commit: {full_hash[:7]}{encrypted_note}")
+        safe_print(f"  Format: {format}, Commit: {full_hash[:7]}{encrypted_note}")
 
         return output_path
 
@@ -1938,7 +1952,7 @@ class SSM:
             load_session(
                 file_path=read_path,
                 globals_dict=loaded_vars,
-                format=format,
+                format=cast(Optional[SessionFormat], format),
                 use_ssm=False,  # 循環参照を避けるため
             )
         finally:
@@ -1950,7 +1964,7 @@ class SSM:
 
         if not loaded_vars:
             warn_msg = i18n.translate("msg.no_variables")
-            print(f"⚠ {warn_msg}")
+            safe_print(f"⚠ {warn_msg}")
             return ""
 
         # 読み込んだ変数を使ってコミット
@@ -1964,8 +1978,8 @@ class SSM:
             commit_hash = self.commit(message)
 
             logger.info(f"Imported {len(loaded_vars)} variables from {input_path}")
-            print(f"✓ Imported {len(loaded_vars)} variables from {input_path}")
-            print(f"  Format: {format}, Commit: {commit_hash[:7] if commit_hash else 'none'}")
+            safe_print(f"✓ Imported {len(loaded_vars)} variables from {input_path}")
+            safe_print(f"  Format: {format}, Commit: {commit_hash[:7] if commit_hash else 'none'}")
 
             return commit_hash
         finally:
@@ -2016,7 +2030,7 @@ class SSM:
         load_session(
             file_path=input_path,
             globals_dict=loaded_vars,
-            format=input_format,
+            format=cast(Optional[SessionFormat], input_format),
             use_ssm=False,  # 循環参照を避けるため
         )
 
@@ -2024,13 +2038,13 @@ class SSM:
         save_session(
             file_path=output_path,
             globals_dict=loaded_vars,
-            format=output_format,
+            format=cast(Optional[SessionFormat], output_format),
             compress=compress,
             use_ssm=False,  # 循環参照を避けるため
         )
 
-        print(f"✓ Converted {len(loaded_vars)} variables")
-        print(f"  {input_path} ({input_format}) → {output_path} ({output_format})")
+        safe_print(f"✓ Converted {len(loaded_vars)} variables")
+        safe_print(f"  {input_path} ({input_format}) → {output_path} ({output_format})")
 
         return output_path
 
@@ -2050,7 +2064,7 @@ class SSM:
             # 全設定を表示（読み取り専用なのでロックは取らない）
             config = self._read_json(config_path)
             for k, v in config.items():
-                print(f"{k}: {v}")
+                safe_print(f"{k}: {v}")
             return config
 
         if value is None:
@@ -2073,7 +2087,7 @@ class SSM:
             except Exception:
                 pass
         info_msg = i18n.translate("msg.operation_completed")
-        print(f"✓ {info_msg}: {key} = {value}")
+        safe_print(f"✓ {info_msg}: {key} = {value}")
         return value
 
     def exclude(self, *names: str) -> None:
@@ -2095,7 +2109,7 @@ class SSM:
             config["exclude"] = list(exclude_list)
             self._write_json(config_path, config)
 
-        print(f"✓ Added to exclude: {', '.join(names)}")
+        safe_print(f"✓ Added to exclude: {', '.join(names)}")
 
     # ========== 署名・整合性検証 ==========
 
@@ -2106,7 +2120,7 @@ class SSM:
             return env_key
         try:
             config = self._read_json(self.ssm_path / self.CONFIG_FILE)
-            return config.get("sign_key")
+            return cast(Optional[str], config.get("sign_key"))
         except Exception:
             return None
 
@@ -2258,7 +2272,7 @@ class SSM:
                     self._write_json(self.ssm_path / self.CONFIG_FILE, config)
 
             info_msg = i18n.translate("info.branch_created", branch_name=branch_name, commit=current_commit[:7])
-            print(f"✓ {info_msg}")
+            safe_print(f"✓ {info_msg}")
             return branch_name
         else:
             # ブランチの存在確認
@@ -2315,7 +2329,7 @@ class SSM:
             self._write_json(self.ssm_path / self.CONFIG_FILE, config)
 
         info_msg = i18n.translate("info.branch_checked_out", branch_name=branch_name)
-        print(f"✓ {info_msg}")
+        safe_print(f"✓ {info_msg}")
 
     def get_current_branch(self) -> Optional[str]:
         """
@@ -2327,7 +2341,7 @@ class SSM:
         self._ensure_initialized()
 
         config = self._read_json(self.ssm_path / self.CONFIG_FILE)
-        return config.get("current_branch")
+        return cast(Optional[str], config.get("current_branch"))
 
     # ========== マージ機能 ==========
 
@@ -2397,7 +2411,7 @@ class SSM:
             # 既にマージ済みかチェック
             if merge_commit == current_commit:
                 info_msg = i18n.translate("info.already_merged", branch_name=branch_name)
-                print(f"✓ {info_msg}")
+                safe_print(f"✓ {info_msg}")
                 return current_commit
 
             # 2つのコミットの共通祖先を探す（簡易版：最初の共通コミット）
@@ -2435,7 +2449,7 @@ class SSM:
                         vars=", ".join(conflicts),
                     )
                     warnings.warn(warn_msg, UserWarning, stacklevel=2)
-                    print(f"⚠ {warn_msg}")
+                    safe_print(f"⚠ {warn_msg}")
 
             # マージコミットを作成（2つの親を持つ）
             globals_dict = self._get_globals_dict(depth=3)
@@ -2483,13 +2497,13 @@ class SSM:
             self._write_text_atomic(head_file, merge_hash)
 
             # ブランチを更新
-            current_branch = self.get_current_branch()
-            if current_branch:
-                branch_file = self.ssm_path / self.BRANCHES_DIR / current_branch
+            target_branch = self.get_current_branch()
+            if target_branch:
+                branch_file = self.ssm_path / self.BRANCHES_DIR / target_branch
                 self._write_text_atomic(branch_file, merge_hash)
 
         info_msg = i18n.translate("info.merge_completed", branch_name=branch_name, commit=merge_hash[:7])
-        print(f"✓ {info_msg}")
+        safe_print(f"✓ {info_msg}")
 
         return merge_hash
 
@@ -2643,7 +2657,7 @@ class SSM:
             self._write_json(tag_file, tag_data)
 
         info_msg = i18n.translate("info.tag_created", tag_name=tag_name, commit=commit_hash[:7])
-        print(f"✓ {info_msg}")
+        safe_print(f"✓ {info_msg}")
 
         return tag_name
 
@@ -2709,7 +2723,7 @@ class SSM:
             self.checkout(commit_hash, clean=clean)
 
         info_msg = i18n.translate("info.tag_checked_out", tag_name=tag_name, commit=commit_hash[:7])
-        print(f"✓ {info_msg}")
+        safe_print(f"✓ {info_msg}")
 
     # ========== リモートリポジトリ機能 ==========
 
@@ -2751,7 +2765,7 @@ class SSM:
             self._write_json(remote_file, remote_data)
 
         info_msg = i18n.translate("info.remote_added", name=name, url=url)
-        print(f"✓ {info_msg}")
+        safe_print(f"✓ {info_msg}")
 
     def remote_list(self) -> dict[str, str]:
         """
@@ -2847,14 +2861,14 @@ class SSM:
                 self._copy_to_remote(remote_ssm_path)
 
                 info_msg = i18n.translate("info.push_completed", remote=remote_name, branch=branch_name, commit=current_commit[:7])
-                print(f"✓ {info_msg}")
+                safe_print(f"✓ {info_msg}")
             else:
                 # クラウド/HTTP など URL 形式のリモート（バックエンド経由）
                 self._push_to_backend(remote_url, branch_name, current_commit, password)
                 info_msg = i18n.translate(
                     "info.push_completed", remote=remote_name, branch=branch_name, commit=current_commit[:7]
                 )
-                print(f"✓ {info_msg}")
+                safe_print(f"✓ {info_msg}")
 
     def pull(
         self,
@@ -2933,7 +2947,7 @@ class SSM:
                 self.checkout(remote_commit)
 
                 info_msg = i18n.translate("info.pull_completed", remote=remote_name, branch=branch_name, commit=remote_commit[:7])
-                print(f"✓ {info_msg}")
+                safe_print(f"✓ {info_msg}")
             else:
                 # クラウド/HTTP など URL 形式のリモート（バックエンド経由）
                 remote_commit = self._pull_from_backend(remote_url, branch_name, password)
@@ -2951,7 +2965,7 @@ class SSM:
                 info_msg = i18n.translate(
                     "info.pull_completed", remote=remote_name, branch=branch_name, commit=remote_commit[:7]
                 )
-                print(f"✓ {info_msg}")
+                safe_print(f"✓ {info_msg}")
 
     def _copy_to_remote(self, remote_ssm_path: Path) -> None:
         """リモートにコミットとオブジェクトをコピー（簡易版）"""
