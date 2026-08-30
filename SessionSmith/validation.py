@@ -24,6 +24,15 @@ _REF_NAME_CHARS_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
 #: 参照名（ブランチ/タグ/リモート名）の最大長
 MAX_REF_NAME_LENGTH = 255
 
+# Windows の予約デバイス名。ディレクトリ配下でもデバイスとして解決されるため、
+# `branches/NUL` のようなパスへの書き込みはヌルデバイスに吸われてしまう。
+# 参照は1名前1ファイルで保持しているので、名前として使わせない。
+_WINDOWS_RESERVED_NAMES = frozenset(
+    {"CON", "PRN", "AUX", "NUL"}
+    | {f"COM{i}" for i in range(1, 10)}
+    | {f"LPT{i}" for i in range(1, 10)}
+)
+
 
 def _has_control_chars(text: str) -> bool:
     """C0 制御文字（NUL含む）または DEL を含むか"""
@@ -45,6 +54,9 @@ def validate_ref_name(name: str, kind: str = "name") -> str:
         - ``.`` や ``..``、またはドットのみで構成される名前
         - 上記の許可文字セット以外を含む名前
         - ``-`` から始まる名前（CLI オプションと誤認されるのを防ぐ）
+        - ``.`` で終わる名前（Windows が末尾のドットを削除して衝突するため）
+        - Windows の予約デバイス名（``CON``, ``PRN``, ``AUX``, ``NUL``,
+          ``COM1``〜``COM9``, ``LPT1``〜``LPT9``。拡張子付きも同様）
 
     Args:
         name: 検証する名前
@@ -83,6 +95,18 @@ def validate_ref_name(name: str, kind: str = "name") -> str:
 
     if name.startswith("-"):
         raise ValidationError(kind, "Name must not start with '-'", name)
+
+    # Windows はファイル名末尾のドットを削除するため、'v2.' と 'v2' が衝突する
+    if name.endswith("."):
+        raise ValidationError(kind, "Name must not end with '.'", name)
+
+    # 予約デバイス名は拡張子付き（NUL.txt など）でも予約扱いになる
+    if name.split(".")[0].upper() in _WINDOWS_RESERVED_NAMES:
+        raise ValidationError(
+            kind,
+            f"Name must not be a Windows reserved device name: {name.split('.')[0]}",
+            name,
+        )
 
     return name
 

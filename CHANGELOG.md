@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **参照名の解決が大文字小文字を区別していなかった問題を修正 (#51)**
+  - ブランチ・タグ・リモートの存在確認を `Path.exists()` で行っていたため、
+    macOS（APFS の既定）と Windows では `branches/feature` しか無いのに
+    `FEATURE` が「存在する」と判定されていた
+  - `checkout_branch("FEATURE")` が通り、`current_branch` に実在しない名前が入る。
+    その状態で `push` するとリモートに別ブランチが作られ、1本だったブランチが2本に割れていた
+  - 存在確認をディレクトリ列挙 + Python 側の厳密比較に変更（`_ref_exists()`）
+  - 作成時は大文字小文字だけが異なる既存参照があれば拒否（`_find_case_conflicting_ref()`）。
+    大文字小文字を区別しないFSでは同じファイルになり既存参照を壊すため
+  - `validate_ref_name()` に Windows の予約デバイス名（`CON` / `PRN` / `AUX` / `NUL` /
+    `COM1`〜`COM9` / `LPT1`〜`LPT9`）と末尾ドットの拒否を追加
+  - 回帰テスト: `tests/test_ref_case_sensitivity.py`
+
 - **ロケール依存のテキストファイル入出力を修正 (#48)**
   - `open()` / `Path.read_text()` / `Path.write_text()` の `encoding` 未指定を全廃し、
     パッケージ内のテキストI/Oをすべて `encoding="utf-8"` に統一

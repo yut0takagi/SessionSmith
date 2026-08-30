@@ -350,8 +350,14 @@ SessionSmithは、Pythonセッション（変数・オブジェクト）をGit�
 - ✅ **Windows 固有のバグを1件修正**
   - `✓` や日本語メッセージの出力が `cp1252` コンソールで `UnicodeEncodeError` になり、
     `ssm.commit()` などが落ちていた（`SessionSmith/_console.py` の `safe_print()` で解消）
-- ⚠️ **Windows でのカバー範囲は限定的**
-  - 現在: Python 3.12 の1組み合わせのみ。macOS は未実行
+- ✅ **CI に macOS を追加**
+  - 実装: マトリクスに `macos-latest`（Python 3.12）を追加
+  - 目的: APFS が既定で大文字小文字を区別しないため、参照名の解決（issue #51）のような
+    問題は macOS でも顕在化する
+- ✅ **参照名の大文字小文字に起因する不整合を修正（issue #51）**
+  - `checkout_branch("FEATURE")` が macOS / Windows で通り、`push` でブランチが2本に割れていた
+- ⚠️ **Windows / macOS でのカバー範囲は限定的**
+  - 現在: それぞれ Python 3.12 の1組み合わせのみ
   - 改善: 問題が見つかった箇所を中心に組み合わせを増やす
 
 ### 開発体験

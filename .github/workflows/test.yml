@@ -16,10 +16,15 @@ jobs:
       matrix:
         os: [ubuntu-latest]
         python-version: ['3.9', '3.10', '3.11', '3.12']
-        # Windows は OS 依存の実装（ProcessLock / アトミック書き込み / パス検証）の
-        # 動作確認が目的なので、代表として最新のサポートバージョンのみ実行する
+        # Windows / macOS は OS 依存の挙動（ProcessLock / アトミック書き込み /
+        # パス検証 / ファイル名の大文字小文字）の確認が目的なので、
+        # 代表として最新のサポートバージョンのみ実行する。
+        # macOS の APFS は既定で大文字小文字を区別しないため、
+        # 参照名の解決（issue #51）のような問題は macOS でも顕在化する。
         include:
           - os: windows-latest
+            python-version: '3.12'
+          - os: macos-latest
             python-version: '3.12'
 
     # 全ステップを bash に統一する（Windows の既定シェルは pwsh のため、
