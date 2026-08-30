@@ -1,7 +1,7 @@
 class Sessionsmith < Formula
   desc "Git-style session management for Python. Save, restore, and track your variables with ease."
   homepage "https://github.com/yut0takagi/SessionSmith"
-  url "https://github.com/yut0takagi/SessionSmith/archive/refs/tags/v2.0.0.tar.gz"
+  url "https://github.com/yut0takagi/SessionSmith/archive/refs/tags/v2.2.0.tar.gz"
   sha256 ""  # GitHub Actionsで自動更新されます
   license "MIT"
   head "https://github.com/yut0takagi/SessionSmith.git", branch: "main"
