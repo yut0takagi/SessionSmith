@@ -5,6 +5,82 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.0] - 2026-08-30
+
+### Added
+
+#### プロセス間ロックとアトミック書き込み (#29)
+- ロックモジュール（`SessionSmith/locking.py`）を追加
+- `.ssm/` リポジトリ単位のプロセス間ロック（`ProcessLock`、ロックファイル `.ssm/.lock`）
+  - `commit` / `checkout` / `merge` / `checkpoint` など、リポジトリを書き換える操作を排他制御
+  - 生存中の保持者からの横取りを防止し、死んだプロセスが残したスタールロックのみ回収
+  - 同一プロセス内では再入可能（`checkout` → 内部の `commit` などでデッドロックしない）
+  - 既定の取得タイムアウトは 10 秒（`SSM.LOCK_TIMEOUT_SECONDS`）。超過時は `SSMLockError`
+- `HEAD` / ブランチ参照などの書き込みを `os.replace` によるアトミック書き込みに変更し、
+  中断時のファイル破損を防止
+- 例外 `SSMLockError` を追加
+
+#### パス・参照名の入力検証 (#30)
+- 検証モジュール（`SessionSmith/validation.py`）を追加
+  - `validate_ref_name()` - ブランチ / タグ / リモート名の検証（制御文字・パス区切り・予約名の拒否）
+  - `ensure_within()` - 対象パスが基準ディレクトリ配下に収まることを保証（パストラバーサル対策）
+  - `validate_path_arg()` - パス引数の共通検証
+- `validate_remote_url()` を追加し、`remote_add()` の時点で未対応スキームを早期に拒否
+  （許可: ローカルパス / `file://` / `s3://` / `gs://`(`gcs://`) / `http(s)://`）
+- VS Code 拡張機能側の検証ルールを Python 実装と統一
+
+#### マージのコンフリクト検出とクリーンチェックアウト (#43)
+- `ssm.merge(branch_name, message=None, on_conflict="warn")` - コンフリクト検出を追加
+  - 両ブランチで同じ変数が異なる値に変更された場合を、マージコミット作成前に検出
+  - `on_conflict`: `"warn"`（既定・警告した上でマージを続行）/ `"error"`（`SSMMergeConflictError`
+    を送出しマージを中止）/ `"ignore"`（従来どおり検出しない）
+  - マージ結果そのものは従来どおりライブな名前空間を記録する last-writer-wins のままで、
+    値レベルの自動マージは行わない
+- 例外 `SSMMergeConflictError` を追加
+- `checkout()` / `checkout_branch()` / `checkout_tag()` に `clean=True` を追加
+  - 対象コミットに含まれない変数を名前空間から削除し、リポジトリの状態を厳密に再現
+
+#### ベンチマーク基盤 (#31)
+- `benchmarks/bench_ssm.py` - `commit` / `checkout` / `diff` / `verify` / チェックポイントを
+  変数数・ペイロード総サイズ・履歴長を変えながら計測（`--preset smoke/quick/heavy`）
+- `benchmarks/compare.py` - 計測結果の比較
+- `.github/workflows/benchmark.yml` - CI でのスモーク実行
+- 計測結果と既知の性能上の懸念は `benchmarks/README.md` を参照
+
+#### テスト
+- プロセス間ロック（`tests/test_locking.py`）
+- パス・入力検証（`tests/test_security.py`）
+- マージコンフリクト / クリーンチェックアウト（`tests/test_merge_checkout_features.py`）
+- 既知バグの回帰テスト（`tests/test_ssm_bugfixes.py`）
+- branch / merge / tag / remote のE2E・異常系（`tests/test_ssm_e2e.py`、#28）
+
+### Fixed
+
+- `SSM._file_locks` がコミットごとに無制限に増加していたメモリリークを修正
+  （上限 512 件の LRU キャッシュ化、#31）
+- `SSM._resolve_hash()` に完全長ハッシュの高速パスを追加し、`commits/` 全走査による
+  O(n) の解決を O(1) に改善
+- 同一秒内に連続したチェックポイントが黙って上書きされる問題を修正
+  （ファイル名にマイクロ秒と重複回避カウンタを付与）
+- `core.py` の型不整合と `merge` のドキュメント齟齬を修正 (#41)
+
+### Changed
+
+- CI: `mypy` を公開API・コアモジュールで必須ゲート化 (#27)
+  - グローバルな `ignore_missing_imports` を廃止し、実際に import している
+    サードパーティモジュールのみを override で列挙
+  - 既存の型エラーを抱えるモジュール（`ssm` / `cli` / `formats` / `manager` /
+    `remote_backends`）は理由付きで一時除外（段階的に縮小予定）
+- CI: `pytest-cov` によるカバレッジレポート生成と `--cov-fail-under=30` のしきい値を追加
+  (#24 #25 #26)
+- パッケージ設定を `pyproject.toml` に一本化し、`setup.py` を shim 化
+- `docs/api-reference.md` を v2.1.0 の実装に合わせて更新 (#32)
+
+### Note
+
+- VS Code / Cursor 拡張機能 v0.3.0（Session Graph）は別タグ `ext-v0.3.0` として
+  リリース済みです。変更内容は `extension/CHANGELOG.md` を参照してください。
+
 ## [2.1.0] - 2026-06-13
 
 ### Added
