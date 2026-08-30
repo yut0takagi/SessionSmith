@@ -69,11 +69,16 @@ class TestGetBackend:
             get_backend("ftp://example.com/repo")
 
 
+def _as_posix_str(path) -> str:
+    """区切り文字を "/" に正規化する（Path はプラットフォーム依存のため）"""
+    return str(path).replace("\\", "/")
+
+
 class TestFileUrlToPath:
     """file:// URL の解析（特に Windows のドライブレター）"""
 
     def test_posix_absolute_path(self):
-        assert str(file_url_to_path("file:///home/u/data")) == "/home/u/data"
+        assert _as_posix_str(file_url_to_path("file:///home/u/data")) == "/home/u/data"
 
     @pytest.mark.parametrize(
         "url",
@@ -95,11 +100,15 @@ class TestFileUrlToPath:
         assert result.rstrip("/\\").endswith("remote")
 
     def test_unc_path(self):
-        result = str(file_url_to_path("file://server/share/dir"))
-        assert result.replace("\\", "/").startswith("//server/share")
+        assert _as_posix_str(file_url_to_path("file://server/share/dir")).startswith(
+            "//server/share"
+        )
 
     def test_percent_encoded_path_is_unquoted(self):
-        assert str(file_url_to_path("file:///home/u/my%20data")) == "/home/u/my data"
+        assert (
+            _as_posix_str(file_url_to_path("file:///home/u/my%20data"))
+            == "/home/u/my data"
+        )
 
 
 class TestIsUrlRemote:
