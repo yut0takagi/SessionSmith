@@ -99,3 +99,81 @@ test('deleteRef and renameRef still work for valid names after validation was ad
     deleteRef(ssm, 'tag', 'v1.0.0');
     assert.equal(fs.existsSync(path.join(ssm, 'tags', 'v1.0.0.bak')), true);
 });
+
+// ---------------------------------------------------------------------------
+// 参照名の大文字小文字（issue #62）
+//
+// macOS（APFS の既定）と Windows のファイルシステムは大文字小文字を区別しない。
+// 存在確認を fs.existsSync() に任せると、'feature' しか無いのに 'FEATURE' が
+// 「存在する」と判定され、安全ガードを迂回して実体を壊せてしまう。
+// 大文字小文字を区別するFS（Linux）でも同じ結果になるように検証する。
+// ---------------------------------------------------------------------------
+
+test('deleteRef rejects a name that differs only in case', () => {
+    const ssm = makeSsm();
+    assert.throws(() => deleteRef(ssm, 'branch', 'FEATURE'), RefError);
+    // 実体が壊れていないこと
+    assert.equal(fs.existsSync(path.join(ssm, 'branches', 'feature')), true);
+});
+
+test('deleteRef cannot bypass the current-branch guard with a different case', () => {
+    // 修正前は current_branch === name の文字列比較を素通りし、
+    // 現在のブランチ 'main' の実体が 'MAIN.bak' に退避されていた
+    const ssm = makeSsm();
+    assert.throws(() => deleteRef(ssm, 'branch', 'MAIN'), RefError);
+    assert.equal(fs.existsSync(path.join(ssm, 'branches', 'main')), true);
+    assert.equal(fs.existsSync(path.join(ssm, 'branches', 'MAIN.bak')), false);
+});
+
+test('deleteRef rejects a tag name that differs only in case', () => {
+    const ssm = makeSsm();
+    assert.throws(() => deleteRef(ssm, 'tag', 'V1'), RefError);
+    assert.equal(fs.existsSync(path.join(ssm, 'tags', 'v1')), true);
+});
+
+test('renameRef rejects a source name that differs only in case', () => {
+    const ssm = makeSsm();
+    assert.throws(() => renameRef(ssm, 'branch', 'FEATURE', 'renamed'), RefError);
+    assert.equal(fs.existsSync(path.join(ssm, 'branches', 'feature')), true);
+});
+
+test('renameRef rejects a destination that differs only in case from an existing ref', () => {
+    const ssm = makeSsm();
+    assert.throws(() => renameRef(ssm, 'branch', 'feature', 'Main'), RefError);
+    assert.equal(fs.existsSync(path.join(ssm, 'branches', 'feature')), true);
+});
+
+test('renameRef still allows changing the case of the ref itself', () => {
+    const ssm = makeSsm();
+    renameRef(ssm, 'branch', 'feature', 'Feature');
+    assert.equal(fs.readFileSync(path.join(ssm, 'branches', 'Feature'), 'utf8'), 'bbb');
+});
+
+test('renameRef keeps current_branch in sync', () => {
+    const ssm = makeSsm();
+    renameRef(ssm, 'branch', 'main', 'trunk');
+    const cfg = JSON.parse(fs.readFileSync(path.join(ssm, 'config'), 'utf8'));
+    assert.equal(cfg.current_branch, 'trunk');
+});
+
+// ---------------------------------------------------------------------------
+// Windows のファイル名規則（Python 側 validate_ref_name() と揃える）
+// ---------------------------------------------------------------------------
+
+test('isValidRefName rejects Windows reserved device names', () => {
+    for (const name of ['NUL', 'nul', 'CON', 'prn', 'AUX', 'COM1', 'LPT9', 'NUL.txt']) {
+        assert.equal(isValidRefName(name), false, `${name} should be rejected`);
+    }
+});
+
+test('isValidRefName rejects names ending with a dot', () => {
+    for (const name of ['v2.', 'release.']) {
+        assert.equal(isValidRefName(name), false, `${name} should be rejected`);
+    }
+});
+
+test('isValidRefName still accepts ordinary names', () => {
+    for (const name of ['feature', 'v1.0.0', 'exp_2', 'a.b-c']) {
+        assert.equal(isValidRefName(name), true, `${name} should be accepted`);
+    }
+});

@@ -2,7 +2,7 @@
   "name": "sessionsmith",
   "displayName": "SessionSmith",
   "description": "Git-style session management for Python with a visual gitgraph-like session graph. Save, restore, branch, tag and inspect your Python variables in Jupyter Notebooks and Python files.",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "icon": "icon.png",
   "publisher": "yut0takagi",
   "author": {
