@@ -277,11 +277,14 @@ SessionSmithは、Pythonセッション（変数・オブジェクト）をGit�
   - プロセス間ロック（`test_locking.py`）、パス/参照名の検証（`test_security.py`）
   - マージコンフリクト検出・`clean=True` チェックアウト（`test_merge_checkout_features.py`）
   - 既知バグの回帰（`test_ssm_bugfixes.py`）、branch/merge/tag/remote のE2E（`test_ssm_e2e.py`）
+- ✅ **低カバレッジのモジュールにテストを追加**
+  - `utils` 7% → 76%、`compare` 8% → 79%、`info` 10% → 66%、`tracer` 9% → 57%
+  - 全体: 43.6% → 50.0%。しきい値を `--cov-fail-under=45` に更新
+  - この作業の過程で issue #57 / #58 のバグが見つかった
 - ⚠️ **カバレッジのしきい値は実測より低い**
-  - 現在: `--cov-fail-under=40`（CI実測 約43.6%）。大幅な低下の検知が目的で、十分な水準ではない
-  - 改善: カバレッジ自体を上げつつ、しきい値を段階的に引き上げる
-  - 特に低いモジュール: `visualizer_arrays`(4%) / `utils`(7%) / `compare`(7%) /
-    `tracer`(9%) / `info`(9%) / `manager`(10%) / `cli`(17%)
+  - 現在: `--cov-fail-under=45`（実測 約50%）。大幅な低下の検知が目的で、十分な水準ではない
+  - 残る低カバレッジ: `visualizer_arrays`(4%) / `visualizer`(6%) / `manager`(11%) /
+    `visualizer_generic`(14%) / `cli`(17%) / `serializers`(18%)
 
 #### エッジケース
 - ✅ **基本的なエッジケースはテスト済み**
@@ -406,9 +409,9 @@ SessionSmithは、Pythonセッション（変数・オブジェクト）をGit�
 - APIリファレンスの更新、構造化ロギング、暗号化・署名、クラウドリモート
 
 ### 🔴 高優先度
-1. **テストカバレッジ自体の引き上げ** - 品質保証のため
-   - CI実測 約43.6%。`utils` / `compare` / `info` / `tracer` / `manager` / `cli` が特に低い
-   - しきい値（現在 `--cov-fail-under=40`）を追随して上げていく
+1. **テストカバレッジ自体の引き上げ（継続）** - 品質保証のため
+   - 実測 約50%。`visualizer*` / `manager` / `cli` / `serializers` が特に低い
+   - しきい値（現在 `--cov-fail-under=45`）を追随して上げていく
 2. **Windows でのカバー範囲拡大** - 互換性のため
    - 現在は Python 3.12 の1組み合わせのみ。macOS は未実行
 3. **`disallow_untyped_defs` の有効化** - 保守性のため

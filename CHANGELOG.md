@@ -7,8 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- テストカバレッジを 43.6% → 50.0% に引き上げ、CI のしきい値を 40% → 45% に更新
+  - `utils` 7% → 76%、`compare` 8% → 79%、`info` 10% → 66%、`tracer` 9% → 57%
+  - 追加: `tests/test_utils.py` / `tests/test_info_and_compare.py` / `tests/test_tracer.py`
+
 ### Fixed
 
+- **`compare_sessions(detailed=True)` が変更を検出できず、副作用があった問題を修正 (#57)**
+  - `load_session()` を既定の `use_ssm=True` で呼んでいたため、一時的な名前空間に
+    何も読み込まれず `changed_variables` が常に空だった
+  - さらに「ファイルを SSM にインポートしてコミットする」経路を通るため、
+    **2つのファイルを比較しただけで `.ssm` にコミットが2つ増えていた**
+  - `use_ssm=False` を指定して、渡した辞書に直接読み込むように修正
+- **`get_session_info()` の `compression` が常に `None` だった問題を修正 (#58)**
+  - `_load_session_file()` が `compression` を `None` で初期化したまま一度も代入していなかった
+  - `utils.detect_compression()` でマジックナンバーから判定するように修正
 - **`init(force=True)` の `.ssm` 破棄を堅牢化 (#53)**
   - 破棄をリポジトリロックの内側で行い、他プロセスが操作の途中で消されないようにした
   - Windows の一時的な削除失敗（他プロセスが開いている `WinError 32`、読み取り専用属性）に対して、

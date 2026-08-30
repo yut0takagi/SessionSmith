@@ -65,9 +65,9 @@ jobs:
       - name: Run tests
         run: |
           pip install -e ".[dev]"
-          # --cov-fail-under: 大幅なカバレッジ低下の検知が目的（実測は約43.6%）。
+          # --cov-fail-under: 大幅なカバレッジ低下の検知が目的（実測は約50%）。
           # 実測値を下回るしきい値を段階的に引き上げていく。
-          pytest tests/ -v --tb=short --timeout=300 -x --cov=SessionSmith --cov-report=term-missing --cov-report=xml --cov-fail-under=40
+          pytest tests/ -v --tb=short --timeout=300 -x --cov=SessionSmith --cov-report=term-missing --cov-report=xml --cov-fail-under=45
 
       - name: Upload coverage report
         if: always()
