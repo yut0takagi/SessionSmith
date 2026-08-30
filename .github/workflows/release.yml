@@ -131,8 +131,18 @@ jobs:
         run: |
           VERSION="${{ steps.get_version.outputs.version }}"
           if [ -f CHANGELOG.md ]; then
-            # CHANGELOGから該当バージョンのセクションを抽出
-            awk "/^## \[${VERSION}\]/,/^## \[/" CHANGELOG.md | sed '$d' > /tmp/release_notes.md || true
+            # CHANGELOGから該当バージョンのセクションを抽出する。
+            #
+            # awk のレンジ pat1,pat2 は pat1 が一致した行に対して pat2 も評価するため、
+            # `/^## \[x.y.z\]/,/^## \[/` は終端パターンが開始行自身に一致してしまい、
+            # 常に1行しか取れない（issue #60）。見出しをスキップして次のバージョン
+            # 見出しで止める状態機械にする。見出し自体は GitHub Release のタイトルと
+            # 重複するので出力しない。
+            awk -v ver="$VERSION" '
+              $0 ~ "^## \\[" ver "\\]" { found = 1; next }
+              found && /^## \[/ { exit }
+              found { print }
+            ' CHANGELOG.md > /tmp/release_notes.md || true
             if [ -s /tmp/release_notes.md ]; then
               cat /tmp/release_notes.md
             else

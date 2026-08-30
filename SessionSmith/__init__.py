@@ -118,7 +118,7 @@ from .tracer import AlgorithmTracer
 from .utils import verify_session
 from .visualizer import print_trace_summary, visualize_algorithm_trace
 
-__version__ = "2.2.0"
+__version__ = "2.3.0"
 
 # 環境変数からロギングを自動設定（SESSIONSMITH_LOG_LEVEL / SESSIONSMITH_LOG_FILE）
 try:
