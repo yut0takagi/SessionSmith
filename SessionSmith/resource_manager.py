@@ -298,7 +298,7 @@ class ResourceManager:
                     try:
                         # コミットファイルからタイムスタンプを読み取る
                         import json
-                        with open(commit_file) as f:
+                        with open(commit_file, encoding='utf-8') as f:
                             commit_data = json.load(f)
                             timestamp_str = commit_data.get("timestamp")
                             if timestamp_str:

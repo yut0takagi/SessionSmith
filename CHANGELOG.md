@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **ロケール依存のテキストファイル入出力を修正 (#48)**
+  - `open()` / `Path.read_text()` / `Path.write_text()` の `encoding` 未指定を全廃し、
+    パッケージ内のテキストI/Oをすべて `encoding="utf-8"` に統一
+  - `_write_json()` は `ensure_ascii=False` で書くため、Windows（cp1252 / cp932）では
+    日本語のコミットメッセージを含むファイルを読めなかった
+  - 具体的な実害: `ResourceManager.cleanup_old_files(commits_days=...)` が
+    `UnicodeDecodeError`（`ValueError` のサブクラス）を except 節で握りつぶし、
+    日本語コミットのクリーンアップを黙ってスキップしていた
+  - 回帰テスト: `tests/test_encoding.py`（ソースレベルのガード + 非ASCIIコミットの機能テスト）
+
 ### Changed
 
 - mypy の CI ゲートを `SessionSmith/` 全モジュールに拡大 (#27 の残作業)

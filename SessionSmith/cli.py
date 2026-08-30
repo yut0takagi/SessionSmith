@@ -74,7 +74,7 @@ def cmd_commit(args):
 
     # 親コミットを取得
     head_file = ssm.ssm_path / "HEAD"
-    parent = head_file.read_text().strip() or None
+    parent = head_file.read_text(encoding="utf-8").strip() or None
 
     # コミット情報を作成
     commit_data = {
@@ -93,7 +93,7 @@ def cmd_commit(args):
     ssm._write_json(commit_path, commit_data)
 
     # HEADを更新
-    head_file.write_text(commit_hash)
+    head_file.write_text(commit_hash, encoding="utf-8")
 
     var_count = len(variables)
     short_hash = commit_hash[:7]
@@ -109,7 +109,7 @@ def cmd_log(args):
         sys.exit(1)
 
     head_file = ssm.ssm_path / "HEAD"
-    current = head_file.read_text().strip()
+    current = head_file.read_text(encoding="utf-8").strip()
 
     if not current:
         safe_print("No commits yet")
@@ -148,7 +148,7 @@ def cmd_status(args):
         sys.exit(1)
 
     head_file = ssm.ssm_path / "HEAD"
-    current = head_file.read_text().strip()
+    current = head_file.read_text(encoding="utf-8").strip()
 
     safe_print(f"On commit: {current[:7] if current else '(none)'}")
 
@@ -176,7 +176,7 @@ def cmd_status(args):
     # 監視状態
     watch_pid_file = ssm.ssm_path / "watch.pid"
     if watch_pid_file.exists():
-        pid = watch_pid_file.read_text().strip()
+        pid = watch_pid_file.read_text(encoding="utf-8").strip()
         safe_print(f"Watch process: PID {pid}")
 
 
@@ -193,7 +193,7 @@ def cmd_checkout(args):
     if not commit_hash:
         # HEADを使用
         head_file = ssm.ssm_path / "HEAD"
-        commit_hash = head_file.read_text().strip()
+        commit_hash = head_file.read_text(encoding="utf-8").strip()
         if not commit_hash:
             safe_print("Error: No commits to checkout", file=sys.stderr)
             sys.exit(1)
@@ -239,7 +239,7 @@ def cmd_diff(args):
         sys.exit(1)
 
     head_file = ssm.ssm_path / "HEAD"
-    current = head_file.read_text().strip()
+    current = head_file.read_text(encoding="utf-8").strip()
 
     if not current:
         safe_print("No commits to compare")
@@ -296,7 +296,7 @@ def cmd_watch(args):
 
     # PIDファイルを作成
     watch_pid_file = ssm.ssm_path / "watch.pid"
-    watch_pid_file.write_text(str(os.getpid()))
+    watch_pid_file.write_text(str(os.getpid()), encoding="utf-8")
 
     # 監視履歴ファイル
     watch_log = ssm.ssm_path / "watch.log"
@@ -351,7 +351,7 @@ def cmd_watch(args):
                     log_entry["error"] = str(e)
 
             # ログに追記
-            with open(watch_log, 'a') as f:
+            with open(watch_log, 'a', encoding='utf-8') as f:
                 f.write(json.dumps(log_entry) + "\n")
 
             snapshot_count += 1
@@ -380,7 +380,7 @@ def cmd_stats(args):
 
     # ログを読み込み
     entries = []
-    with open(watch_log) as f:
+    with open(watch_log, encoding='utf-8') as f:
         for line in f:
             try:
                 entries.append(json.loads(line.strip()))
@@ -486,7 +486,7 @@ def cmd_dashboard(args):
 
         def _get_status(self):
             head_file = ssm.ssm_path / "HEAD"
-            current = head_file.read_text().strip() if head_file.exists() else None
+            current = head_file.read_text(encoding="utf-8").strip() if head_file.exists() else None
 
             snapshot_path = ssm.ssm_path / "snapshots" / "latest"
             variables = {}
@@ -516,7 +516,7 @@ def cmd_dashboard(args):
             entries = []
 
             if watch_log.exists():
-                with open(watch_log) as f:
+                with open(watch_log, encoding='utf-8') as f:
                     for line in f:
                         try:
                             entries.append(json.loads(line.strip()))
@@ -640,7 +640,7 @@ def cmd_export(args):
         sys.exit(1)
 
     entries = []
-    with open(watch_log) as f:
+    with open(watch_log, encoding='utf-8') as f:
         for line in f:
             try:
                 entries.append(json.loads(line.strip()))
@@ -648,11 +648,11 @@ def cmd_export(args):
                 continue
 
     if format_type == "json":
-        with open(output, 'w') as f:
+        with open(output, 'w', encoding='utf-8') as f:
             json.dump(entries, f, indent=2)
     elif format_type == "csv":
         import csv
-        with open(output, 'w', newline='') as f:
+        with open(output, 'w', newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
             writer.writerow(["timestamp", "variable_count"])
             for entry in entries:
