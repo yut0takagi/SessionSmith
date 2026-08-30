@@ -1,69 +1,102 @@
 name: Update Homebrew Formula
 
+# release.yml から呼び出される（reusable workflow）ほか、手動でも実行できます。
+#
+# 以前は `on: push: tags: ['v*']` で起動していましたが、release.yml が
+# `secrets.GITHUB_TOKEN` でタグを push しているため、GitHub Actions の仕様
+# （GITHUB_TOKEN が発生させたイベントは他のワークフローを起動しない）により
+# 一度も実行されず、Formula の sha256 が空のまま放置されていました。
+# そのため release.yml から明示的に呼び出す形に変更しています。
 on:
-  push:
-    tags:
-      - 'v*'  # vで始まるタグがプッシュされたときに実行
+  workflow_call:
+    inputs:
+      tag_name:
+        description: 'Formula に反映するタグ（例: v2.2.0）'
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Formula に反映するタグ（例: v2.2.0）'
+        required: true
+        type: string
 
 jobs:
   update-formula:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    
+
     steps:
-      - name: Checkout repository
+      # タグではなく main を明示的にチェックアウトする（コミット先が main のため）
+      - name: Checkout main
         uses: actions/checkout@v4
         with:
+          ref: main
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
-      
-      - name: Get tag name
-        id: tag
-        run: |
-          TAG_NAME=${GITHUB_REF#refs/tags/}
-          echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
-          echo "Tag: $TAG_NAME"
-      
+
       - name: Calculate SHA256
         id: sha256
         run: |
-          TAG_NAME="${{ steps.tag.outputs.tag_name }}"
+          TAG_NAME="${{ inputs.tag_name }}"
           URL="https://github.com/${{ github.repository }}/archive/refs/tags/${TAG_NAME}.tar.gz"
           echo "Downloading: $URL"
-          SHA256=$(curl -sL "$URL" | shasum -a 256 | awk '{print $1}')
+
+          # タグ作成直後は tarball がまだ生成されていないことがあるためリトライする
+          for i in 1 2 3 4 5; do
+            SHA256=$(curl -sfL "$URL" | shasum -a 256 | awk '{print $1}')
+            if [ -n "$SHA256" ] && [ "$SHA256" != "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" ]; then
+              break
+            fi
+            echo "Retry $i: tarball not available yet"
+            sleep 10
+          done
+
+          if [ -z "$SHA256" ] || [ "$SHA256" = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" ]; then
+            echo "::error::Failed to download tarball for ${TAG_NAME}"
+            exit 1
+          fi
+
           echo "sha256=$SHA256" >> $GITHUB_OUTPUT
           echo "SHA256: $SHA256"
-      
+
       - name: Update Formula
         run: |
-          TAG_NAME="${{ steps.tag.outputs.tag_name }}"
+          TAG_NAME="${{ inputs.tag_name }}"
           SHA256="${{ steps.sha256.outputs.sha256 }}"
-          
-          # Formulaファイルを更新
+
           sed -i.bak \
             -e "s|url \".*\"|url \"https://github.com/${{ github.repository }}/archive/refs/tags/${TAG_NAME}.tar.gz\"|" \
             -e "s|sha256 \".*\"|sha256 \"${SHA256}\"|" \
             Formula/sessionsmith.rb
-          
-          # バックアップファイルを削除
+
           rm -f Formula/sessionsmith.rb.bak
-          
-          # 変更を確認
+
           echo "Updated Formula:"
           cat Formula/sessionsmith.rb
-      
+
       - name: Commit and push changes
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          
+
           git add Formula/sessionsmith.rb
-          
+
           if git diff --staged --quiet; then
             echo "No changes to commit"
-          else
-            git commit -m "chore: update Formula SHA256 for ${{ steps.tag.outputs.tag_name }}"
-            git push origin HEAD:main
+            exit 0
           fi
 
+          git commit -m "chore: update Formula SHA256 for ${{ inputs.tag_name }}"
+
+          # main が進んでいる可能性があるためリベースしてから push する
+          for i in 1 2 3; do
+            git fetch origin main
+            git rebase origin/main && git push origin HEAD:main && exit 0
+            echo "Retry $i: push failed, retrying"
+            sleep 5
+          done
+
+          echo "::error::Failed to push Formula update to main"
+          exit 1
