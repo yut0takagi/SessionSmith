@@ -26,6 +26,7 @@ import logging
 import os
 import pickle
 import shutil
+import stat
 import threading
 import time
 import warnings
@@ -53,7 +54,12 @@ from .exceptions import (
 from .formats import SessionFormat
 from .jupyter_utils import is_jupyter_environment, is_jupyter_internal_var
 from .locking import ProcessLock
-from .validation import ensure_within, validate_path_arg, validate_ref_name
+from .validation import (
+    check_path_length,
+    ensure_within,
+    validate_path_arg,
+    validate_ref_name,
+)
 
 if TYPE_CHECKING:
     from types import FrameType
@@ -750,6 +756,54 @@ class SSM:
         """SSMが初期化されているか"""
         return self.ssm_path.exists() and (self.ssm_path / self.CONFIG_FILE).exists()
 
+    @staticmethod
+    def _remove_repo_tree(path: Path, retries: int = 3, delay: float = 0.2) -> None:
+        """
+        `.ssm` ディレクトリを削除する（Windows の一時的な失敗に対処する）
+
+        Windows では他プロセスが開いているファイルを削除できず
+        `WinError 32` になる。読み取り専用属性のファイルも `PermissionError`
+        になる。いずれも `shutil.rmtree` を途中で止めてしまい、中途半端に
+        消えた `.ssm` が残る。
+
+        その状態で後続の `mkdir()` が走ると `FileExistsError`（「既に存在します」）
+        になり、本当の原因（削除に失敗した）が利用者に伝わらない。属性の解除と
+        短いリトライを行い、それでも消せない場合は削除失敗を明示して送出する。
+
+        Args:
+            path: 削除するディレクトリ
+            retries: 削除の試行回数
+            delay: リトライの待ち時間（回数に応じて伸ばす）
+
+        Raises:
+            SSMConfigError: 削除に失敗した場合
+        """
+        if os.name == "nt":
+            # 読み取り専用属性は Windows で PermissionError の原因になるため、
+            # 削除前にまとめて解除する。POSIX で同じ chmod をすると権限を
+            # 落としてディレクトリを辿れなくなるので Windows 限定にする。
+            for entry in path.rglob("*"):
+                try:
+                    os.chmod(entry, stat.S_IWRITE)
+                except OSError:
+                    pass
+
+        last_error: Optional[OSError] = None
+        for attempt in range(retries):
+            try:
+                shutil.rmtree(path)
+                return
+            except OSError as e:
+                last_error = e
+                if attempt < retries - 1:
+                    time.sleep(delay * (attempt + 1))
+
+        raise SSMConfigError(
+            i18n.translate(
+                "error.ssm_remove_failed", path=str(path), reason=str(last_error)
+            )
+        )
+
     def init(self, force: bool = False) -> None:
         """
         .ssm ディレクトリを初期化
@@ -762,7 +816,11 @@ class SSM:
                 message = i18n.translate("info.ssm_already_initialized", base_path=self.base_path)
                 safe_print(f"✓ {message}")
                 return
-            shutil.rmtree(self.ssm_path)
+            # 他プロセスが操作の途中でないことを保証してから破棄する。
+            # ロックファイル自体も .ssm 配下にあるが、解放時の unlink 失敗は
+            # ProcessLock 側が FileNotFoundError として吸収する。
+            with self._repo_lock():
+                self._remove_repo_tree(self.ssm_path)
 
         # ディレクトリ構造を作成
         self.ssm_path.mkdir(parents=True)
@@ -819,6 +877,9 @@ class SSM:
         # ファイルロックを取得
         lock = self._get_file_lock(str(path))
         with lock:
+            # バックアップ・一時ファイルの分だけ長くなるので、そちらで判定する
+            check_path_length(path.with_suffix(path.suffix + '.tmp'))
+
             # バックアップを作成（既存ファイルがある場合）
             backup_path = path.with_suffix(path.suffix + '.bak')
             if path.exists():
@@ -868,6 +929,8 @@ class SSM:
         lock = self._get_file_lock(str(path))
         with lock:
             temp_path = path.with_name(path.name + '.tmp')
+            # 一時ファイルの方が長いので、そちらで判定すれば本体も収まる
+            check_path_length(temp_path)
             with open(temp_path, 'w', encoding='utf-8') as f:
                 f.write(text)
             os.replace(temp_path, path)
