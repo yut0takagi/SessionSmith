@@ -298,16 +298,20 @@ class ResourceManager:
                     try:
                         # コミットファイルからタイムスタンプを読み取る
                         import json
+
+                        # Windows では開いたままのファイルを削除できない（WinError 32）ため、
+                        # 読み込みの with ブロックを抜けてから unlink する
                         with open(commit_file, encoding='utf-8') as f:
                             commit_data = json.load(f)
-                            timestamp_str = commit_data.get("timestamp")
-                            if timestamp_str:
-                                commit_time = datetime.fromisoformat(timestamp_str)
-                                if commit_time < cutoff_time:
-                                    size = commit_file.stat().st_size
-                                    commit_file.unlink()
-                                    freed_bytes += size
-                                    logger.info(f"Cleaned up old commit: {commit_file.name}")
+
+                        timestamp_str = commit_data.get("timestamp")
+                        if timestamp_str:
+                            commit_time = datetime.fromisoformat(timestamp_str)
+                            if commit_time < cutoff_time:
+                                size = commit_file.stat().st_size
+                                commit_file.unlink()
+                                freed_bytes += size
+                                logger.info(f"Cleaned up old commit: {commit_file.name}")
                     except (OSError, json.JSONDecodeError, KeyError, ValueError) as e:
                         logger.warning(f"Failed to delete commit {commit_file}: {e}")
 

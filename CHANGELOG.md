@@ -18,6 +18,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `UnicodeDecodeError`（`ValueError` のサブクラス）を except 節で握りつぶし、
     日本語コミットのクリーンアップを黙ってスキップしていた
   - 回帰テスト: `tests/test_encoding.py`（ソースレベルのガード + 非ASCIIコミットの機能テスト）
+- **Windows でコミットのクリーンアップが全く機能していなかった問題を修正 (#48)**
+  - `ResourceManager.cleanup_old_files(commits_days=...)` が `unlink()` を
+    `with open(...)` の内側で呼んでいたため、Windows では開いたままのファイルを
+    削除できず `WinError 32` になっていた
+  - `except OSError` に捕まるため例外にはならず、警告ログを出して黙ってスキップしていた
+  - 読み込みの `with` ブロックを抜けてから `unlink()` するように修正
 
 ### Changed
 

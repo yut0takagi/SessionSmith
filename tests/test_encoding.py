@@ -108,8 +108,13 @@ class TestNonAsciiCommitMessages:
     def test_resource_manager_cleanup_handles_japanese_commit(self, tmp_path):
         """日本語コミットがあっても ResourceManager のクリーンアップが動くこと
 
-        修正前は Windows で `UnicodeDecodeError`（`ValueError` のサブクラス）が
-        except 節に握りつぶされ、そのコミットが黙ってスキップされていた。
+        修正前は Windows で2つの理由からクリーンアップが黙ってスキップされていた。
+
+        1. コミットJSONを encoding 未指定で読むため `UnicodeDecodeError`
+           （`ValueError` のサブクラス）になり、except 節に握りつぶされていた
+        2. `unlink()` を `with open(...)` の内側で呼んでいたため、開いたままの
+           ファイルを削除できず `WinError 32` になっていた（エンコーディングとは無関係で、
+           Windows ではコミットのクリーンアップが全く機能していなかった）
         """
         import json
 
