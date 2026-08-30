@@ -5,46 +5,45 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.3.0] - 2026-08-30
 
-### Changed
+Windows と macOS を CI のテストマトリクスに追加したことで見つかった、
+プラットフォーム依存のバグを中心とした修正リリースです。
 
-- テストカバレッジを 43.6% → 50.0% に引き上げ、CI のしきい値を 40% → 45% に更新
-  - `utils` 7% → 76%、`compare` 8% → 79%、`info` 10% → 66%、`tracer` 9% → 57%
-  - 追加: `tests/test_utils.py` / `tests/test_info_and_compare.py` / `tests/test_tracer.py`
-- GitHub Actions を Node.js 24 対応のバージョンへ更新
-  - `actions/checkout` v4 → v7、`actions/setup-python` v5 → v7、
-    `actions/upload-artifact` v4 → v7、`actions/setup-node` v4 → v7、
-    `softprops/action-gh-release` v1 → v3
-  - Node.js 20 は非推奨で、実行時は Node.js 24 に強制されたうえで警告が出ていた
-    （`softprops/action-gh-release@v1` に至っては Node.js 16 のままだった）
-  - いずれのメジャーアップも実体は Node ランタイムの更新で、入力の互換性は維持されている
+### ⚠️ 挙動の変更（アップグレード時の注意）
+
+いずれも壊れていた挙動の修正ですが、これまでの動作に依存していた場合は影響します。
+
+- **大文字小文字が違う参照名は解決されなくなります** (#51)
+  macOS / Windows では `checkout_branch("FEATURE")` が `branches/feature` を
+  指して成功していましたが、`SSMBranchNotFoundError` になります。正しい名前を指定してください。
+- **大文字小文字だけが異なる参照は作成できなくなります** (#51)
+  `feature` がある状態での `branch("Feature", create=True)` は `SSMConfigError` になります。
+- **一部の参照名が使えなくなります** (#51)
+  Windows の予約デバイス名（`CON` / `PRN` / `AUX` / `NUL` / `COM1`〜`COM9` / `LPT1`〜`LPT9`）と、
+  末尾が `.` の名前は `ValidationError` になります。
+- **`compare_sessions(detailed=True)` が `.ssm` にコミットを作らなくなります** (#57)
+  従来は比較しただけでコミットが2つ増えていました。この副作用に依存していた場合は影響します。
+- **`get_session_info()["compression"]` が実際の圧縮形式を返します** (#58)
+  従来は常に `None` でした。
 
 ### Fixed
 
-- **`compare_sessions(detailed=True)` が変更を検出できず、副作用があった問題を修正 (#57)**
-  - `load_session()` を既定の `use_ssm=True` で呼んでいたため、一時的な名前空間に
-    何も読み込まれず `changed_variables` が常に空だった
-  - さらに「ファイルを SSM にインポートしてコミットする」経路を通るため、
-    **2つのファイルを比較しただけで `.ssm` にコミットが2つ増えていた**
-  - `use_ssm=False` を指定して、渡した辞書に直接読み込むように修正
-- **`get_session_info()` の `compression` が常に `None` だった問題を修正 (#58)**
-  - `_load_session_file()` が `compression` を `None` で初期化したまま一度も代入していなかった
-  - `utils.detect_compression()` でマジックナンバーから判定するように修正
-- **`init(force=True)` の `.ssm` 破棄を堅牢化 (#53)**
-  - 破棄をリポジトリロックの内側で行い、他プロセスが操作の途中で消されないようにした
-  - Windows の一時的な削除失敗（他プロセスが開いている `WinError 32`、読み取り専用属性）に対して、
-    属性の解除と短いリトライを追加
-  - 削除に失敗した場合は削除失敗として明示的に送出する。従来は `rmtree` が途中で失敗しても
-    素通りし、直後の `mkdir()` が `FileExistsError`（「既に存在します」）になって
-    本当の原因が伝わらなかった
-- **Windows の `MAX_PATH` 制限を分かりやすいエラーにした (#54)**
-  - 参照名は255文字まで許可されるため、`.ssm/branches/<name>` は長パス未有効の Windows の
-    上限（260文字）を容易に超える。従来は原因の分からない `OSError` になっていた
-  - `check_path_length()` を追加し、書き込みの集約点（`_write_text_atomic()` / `_write_json()`）で
-    一時ファイル名も含めて検査する
-  - 制限は Windows 固有のため既定では Windows 上でのみ検査する（テストからは強制可能）
+#### Windows / macOS 依存のバグ
 
+- **Windows のコンソールで出力時にクラッシュする問題を修正**
+  - `ssm.commit()` などが出力する `✓` や日本語メッセージが、Windows の既定コンソール
+    （`cp1252` など）で `UnicodeEncodeError` になり処理全体が落ちていた
+  - 端末が表現できない文字を置換して出力を継続する `SessionSmith/_console.py` の
+    `safe_print()` を追加し、パッケージ内の `print()` 229箇所を置き換え
+  - 回帰テスト: `tests/test_console.py`
+- **Windows で `file://` リモートが意図しない場所を指す問題を修正**
+  - `file://C:\data` は `urlparse` で `path` が空になるため、カレントディレクトリ配下の
+    相対パス `.ssm` として扱われていた。`file:///C:/data` や `file://C:/data` も
+    ドライブレターが失われていた
+  - `file_url_to_path()` を追加し、`url2pathname()` 経由で3つの書き方すべてと
+    UNC パス（`file://server/share`）に対応
+  - 回帰テスト: `tests/test_remote_backends.py::TestFileUrlToPath`
 - **参照名の解決が大文字小文字を区別していなかった問題を修正 (#51)**
   - ブランチ・タグ・リモートの存在確認を `Path.exists()` で行っていたため、
     macOS（APFS の既定）と Windows では `branches/feature` しか無いのに
@@ -54,10 +53,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - 存在確認をディレクトリ列挙 + Python 側の厳密比較に変更（`_ref_exists()`）
   - 作成時は大文字小文字だけが異なる既存参照があれば拒否（`_find_case_conflicting_ref()`）。
     大文字小文字を区別しないFSでは同じファイルになり既存参照を壊すため
-  - `validate_ref_name()` に Windows の予約デバイス名（`CON` / `PRN` / `AUX` / `NUL` /
-    `COM1`〜`COM9` / `LPT1`〜`LPT9`）と末尾ドットの拒否を追加
+  - `validate_ref_name()` に Windows の予約デバイス名と末尾ドットの拒否を追加
   - 回帰テスト: `tests/test_ref_case_sensitivity.py`
-
 - **ロケール依存のテキストファイル入出力を修正 (#48)**
   - `open()` / `Path.read_text()` / `Path.write_text()` の `encoding` 未指定を全廃し、
     パッケージ内のテキストI/Oをすべて `encoding="utf-8"` に統一
@@ -73,40 +70,75 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     削除できず `WinError 32` になっていた
   - `except OSError` に捕まるため例外にはならず、警告ログを出して黙ってスキップしていた
   - 読み込みの `with` ブロックを抜けてから `unlink()` するように修正
+- **`init(force=True)` の `.ssm` 破棄を堅牢化 (#53)**
+  - 破棄をリポジトリロックの内側で行い、他プロセスが操作の途中で消されないようにした
+  - Windows の一時的な削除失敗（他プロセスが開いている `WinError 32`、読み取り専用属性）に対して、
+    属性の解除と短いリトライを追加
+  - 削除に失敗した場合は削除失敗として明示的に送出する。従来は `rmtree` が途中で失敗しても
+    素通りし、直後の `mkdir()` が `FileExistsError`（「既に存在します」）になって
+    本当の原因が伝わらなかった
+- **Windows の `MAX_PATH` 制限を分かりやすいエラーにした (#54)**
+  - 参照名は255文字まで許可されるため、`.ssm/branches/<name>` は長パス未有効の Windows の
+    上限（260文字）を容易に超える。従来は原因の分からない `OSError` になっていた
+  - `check_path_length()` を追加し、書き込みの集約点（`_write_text_atomic()` / `_write_json()`）で
+    一時ファイル名も含めて検査する
+  - 制限は Windows 固有のため既定では Windows 上でのみ検査する（テストからは強制可能）
+
+#### 機能不全
+
+- **`compare_sessions(detailed=True)` が変更を検出できず、副作用があった問題を修正 (#57)**
+  - `load_session()` を既定の `use_ssm=True` で呼んでいたため、一時的な名前空間に
+    何も読み込まれず `changed_variables` が常に空だった
+  - さらに「ファイルを SSM にインポートしてコミットする」経路を通るため、
+    **2つのファイルを比較しただけで `.ssm` にコミットが2つ増えていた**
+  - `use_ssm=False` を指定して、渡した辞書に直接読み込むように修正
+- **`get_session_info()` の `compression` が常に `None` だった問題を修正 (#58)**
+  - `_load_session_file()` が `compression` を `None` で初期化したまま一度も代入していなかった
+  - `utils.detect_compression()` でマジックナンバーから判定するように修正
+- `SSM._signal_handler` が、元のシグナルハンドラが `SIG_IGN`（整数の 1）だった場合に
+  `1(signum, frame)` を呼び出して `TypeError` になる問題を修正
+  （真偽値ではなく `callable()` で確認するように変更。`SIG_DFL` は 0 のため従来も呼ばれなかった）
 
 ### Changed
 
-- mypy の CI ゲートを `SessionSmith/` 全モジュールに拡大 (#27 の残作業)
+#### 開発基盤
+
+- **CI のテストマトリクスに `windows-latest` と `macos-latest`（ともに Python 3.12）を追加**
+  - OS 依存の実装（`ProcessLock` / アトミック書き込み / パス検証 / ファイル名の大文字小文字）の
+    動作確認が目的。このリリースの修正の大半はこれによって見つかった
+  - 全ステップのシェルを bash に統一（Windows の既定 pwsh では `rm -rf` や
+    `dist/*.whl` のグロブが動かないため）
+- **mypy の CI ゲートを `SessionSmith/` 全モジュールに拡大 (#27 の残作業)**
   - `ssm` / `cli` / `formats` / `manager` / `remote_backends` の `ignore_errors` を削除し、
     既存の型エラー30件をすべて解消
   - `pyproject.toml` の overrides に残るのは、型スタブを提供していないサードパーティ依存の
     `ignore_missing_imports` のみ
   - 公開シグネチャ用に `SessionFormat`（`Literal["pickle", "json", "msgpack", "hdf5"]`）を
     `SessionSmith/formats.py` に追加
-- CI のカバレッジしきい値を 30% → 40% に引き上げ（実測 約43.6%）
-- CI のテストマトリクスに `windows-latest`（Python 3.12）を追加
-  - OS 依存の実装（`ProcessLock` / アトミック書き込み / パス検証）の動作確認が目的
-  - 全ステップのシェルを bash に統一（Windows の既定 pwsh では `rm -rf` や
-    `dist/*.whl` のグロブが動かないため）
-
-### Fixed
-
-- **Windows のコンソールで出力時にクラッシュする問題を修正**
-  - `ssm.commit()` などが出力する `✓` や日本語メッセージが、Windows の既定コンソール
-    （`cp1252` など）で `UnicodeEncodeError` になり処理全体が落ちていた
-  - 端末が表現できない文字を置換して出力を継続する `SessionSmith/_console.py` の
-    `safe_print()` を追加し、パッケージ内の `print()` 229箇所を置き換え
-  - 回帰テスト: `tests/test_console.py`
-- **Windows で `file://` リモートが意図しない場所を指す問題を修正**
-  - `file://C:\\data` は `urlparse` で `path` が空になるため、カレントディレクトリ配下の
-    相対パス `.ssm` として扱われていた。`file:///C:/data` や `file://C:/data` も
-    ドライブレターが失われていた
-  - `file_url_to_path()` を追加し、`url2pathname()` 経由で3つの書き方すべてと
-    UNC パス（`file://server/share`）に対応
-  - 回帰テスト: `tests/test_remote_backends.py::TestFileUrlToPath`
-- `SSM._signal_handler` が、元のシグナルハンドラが `SIG_IGN`（整数の 1）だった場合に
-  `1(signum, frame)` を呼び出して `TypeError` になる問題を修正
-  （真偽値ではなく `callable()` で確認するように変更。`SIG_DFL` は 0 のため従来も呼ばれなかった）
+- **テストカバレッジを 35% → 50.0% に引き上げ、CI のしきい値を 30% → 45% に更新**
+  - `utils` 7% → 76%、`compare` 8% → 79%、`info` 10% → 66%、`tracer` 9% → 57%
+  - 追加したテストファイル: `test_console.py` / `test_encoding.py` /
+    `test_ref_case_sensitivity.py` / `test_platform_robustness.py` /
+    `test_utils.py` / `test_info_and_compare.py` / `test_tracer.py`
+- **Homebrew Formula の自動更新が一度も実行されていなかった問題を修正**
+  - `update-formula.yml` は `on: push: tags` で起動する設計だったが、`release.yml` が
+    `GITHUB_TOKEN` でタグを push しているため（GITHUB_TOKEN が発生させたイベントは
+    他のワークフローを起動しない仕様）一度も動かず、`sha256` が空のままだった
+  - reusable workflow (`workflow_call`) 化して `release.yml` から明示的に呼び出す形に変更。
+    手動実行用に `workflow_dispatch` も追加
+- **リリースノートが CHANGELOG から抽出できていなかった問題を修正 (#60)**
+  - `release.yml` の `awk "/^## \\[${VERSION}\\]/,/^## \\[/"` は、awk のレンジが
+    開始行に対して終端パターンも評価するため常に1行しか取れず、続く `sed '$d'` で
+    出力が空になっていた
+  - その結果 v2.0.0 / v2.1.0 / v2.2.0 の GitHub Release 本文は、
+    「See CHANGELOG.md for details」という定型文だけになっていた
+  - 見出しをスキップして次のバージョン見出しで止める状態機械に変更
+- **GitHub Actions を Node.js 24 対応のバージョンへ更新**
+  - `actions/checkout` v4 → v7、`actions/setup-python` v5 → v7、
+    `actions/upload-artifact` v4 → v7、`actions/setup-node` v4 → v7、
+    `softprops/action-gh-release` v1 → v3
+  - Node.js 20 は非推奨で、実行時は Node.js 24 に強制されたうえで警告が出ていた
+    （`softprops/action-gh-release@v1` に至っては Node.js 16 のままだった）
 
 ## [2.2.0] - 2026-08-30
 
